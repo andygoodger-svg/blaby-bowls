@@ -13,6 +13,23 @@ from datetime import datetime
 OUTPUT_DIR = "/Volumes/SSD_1/blaby-bowls"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) BlabyScraper/2.0"}
 
+# Telegram notification
+TELEGRAM_BOT_TOKEN = "8732764989:AAH4rly4qwF3mZt-DEVzn6_wVlzZbDcoIA4"
+TELEGRAM_CHAT_ID = "8391419897"
+
+
+def send_telegram(message):
+    """Send a notification to Telegram."""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}, timeout=10)
+        if r.status_code == 200:
+            print("  Telegram notification sent.")
+        else:
+            print(f"  [WARN] Telegram send failed: {r.status_code}")
+    except Exception as e:
+        print(f"  [WARN] Telegram error: {e}")
+
 # Hinckley team-specific URLs (no more division mixing)
 HINCKLEY_BASE = "https://www.bowlsresultstwo.co.uk/results24"
 HINCKLEY_TEAMS = [
@@ -490,9 +507,25 @@ def main():
 
     # --- GIT PUSH ---
     print("\nPushing to GitHub Pages...")
-    if git_push():
+    pushed = git_push()
+
+    # --- TELEGRAM NOTIFICATION ---
+    now = datetime.now().strftime("%d %b %Y %H:%M")
+    h_total = sum(len(hinckley_data.get(t["name"], [])) for t in HINCKLEY_TEAMS)
+    l_total = sum(len(leicester_data.get(k, {}).get("rows", [])) for k in ["div1", "div2n", "div2s"])
+
+    if pushed:
+        msg = (
+            f"<b>Blaby Bowls Updated</b> - {now}\n\n"
+            f"Hinckley: {h_total} fixtures\n"
+            f"Leicester: {l_total} Blaby rows\n"
+            f"South Leics: {len(south_leics['fixtures'])} fixtures\n\n"
+            f"<a href='https://andygoodger-svg.github.io/blaby-bowls/'>View site</a>"
+        )
+        send_telegram(msg)
         print("\nDone! Live at https://andygoodger-svg.github.io/blaby-bowls/")
     else:
+        send_telegram(f"Blaby Bowls scraper ran at {now} but push failed. Check logs.")
         print("\n[WARN] Git push failed - files saved locally only.")
 
     print("=" * 60)
