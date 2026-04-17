@@ -279,11 +279,12 @@ def parse_leicester_docx(url, label):
         print(f"    DEBUG: {len(doc.tables)} table(s), {len(all_rows)} total rows, {len(blaby_rows)} Blaby rows")
         print(f"    DEBUG: {len(all_paras)} paragraphs")
         for t_idx, t_data in enumerate(tables_raw):
-            print(f"    DEBUG Table {t_idx}: header={t_data['header'][:6]}, {len(t_data['rows'])} rows")
-            for r_idx, row in enumerate(t_data['rows'][:12]):  # Show first 12 rows
-                print(f"      Row {r_idx}: {row[:6]}")
-            if len(t_data['rows']) > 12:
-                print(f"      ... ({len(t_data['rows'])-12} more rows)")
+            ncols = len(t_data['header']) if t_data['header'] else (len(t_data['rows'][0]) if t_data['rows'] else 0)
+            print(f"    DEBUG Table {t_idx}: {ncols} cols, header={t_data['header']}, {len(t_data['rows'])} rows")
+            for r_idx, row in enumerate(t_data['rows'][:16]):  # Show first 16 rows, ALL columns
+                print(f"      Row {r_idx}: {row}")
+            if len(t_data['rows']) > 16:
+                print(f"      ... ({len(t_data['rows'])-16} more rows)")
         # Show first few paragraphs for context
         for p in all_paras[:5]:
             print(f"    DEBUG Para: '{p[:80]}'")
@@ -307,16 +308,14 @@ def parse_leicester_docx(url, label):
 def parse_leicester_fixtures_structured(div1_data):
     """Parse Leicester Div 1 docx into structured fixture list with dates.
 
-    Known docx format (from debug output):
-    - Single table, 6+ columns, ~82 rows
-    - Column 0: Date parts spread across rows (e.g. row N="29th", row N+1="April")
-    - Column 2: Team names — consecutive pairs are Home/Away
-    - Column 3: Shots/scores (when matches have been played)
-    - Column 5: W/L indicator
-    - Month name rows (like "April") also appear in column 0
+    The docx has a WIDE table with TWO side-by-side columns of fixture boxes:
+      - Left column group:  date in col 0, teams in col 2, shots in col 3
+      - Right column group: date in col N, teams in col N+2, shots in col N+3
+    where N is the first column of the right-side boxes.
 
-    We scan through all rows, tracking the current date from column 0,
-    collecting team names from column 2, and pairing them as fixtures.
+    We auto-detect column groups by scanning every column in the first few rows
+    for date-day patterns (e.g. "29th", "6th"), then process each group
+    independently using the same logic.
     """
     if not div1_data:
         return []
@@ -327,47 +326,98 @@ def parse_leicester_fixtures_structured(div1_data):
     MONTHS = ["january", "february", "march", "april", "may", "june",
               "july", "august", "september", "october", "november", "december"]
     date_day_pattern = re.compile(r'^(\d{1,2})(st|nd|rd|th)$', re.IGNORECASE)
+    SKIP_WORDS = {"shots", "w", "l", "d", "for", "agst", "home", "away", "pts",
+                  "points", "rinks", "total"}
 
     for t_data in tables_raw:
         rows = t_data["rows"]
-        current_date_day = ""  # e.g. "29th"
-        current_date_full = ""  # e.g. "29th April"
-        team_buffer = []  # Collect team names to pair up
+        if not rows:
+            continue
 
+        ncols = max(len(r) for r in rows)
+        print(f"    Leicester table: {len(rows)} rows x {ncols} cols")
+
+        # --- Auto-detect column groups ---
+        # Scan all rows for columns that contain date-day patterns (e.g. "29th")
+        date_cols = set()
         for row in rows:
-            col0 = row[0].strip() if len(row) > 0 else ""
-            col2 = row[2].strip() if len(row) > 2 else ""
-            col3 = row[3].strip() if len(row) > 3 else ""
+            for ci, cell in enumerate(row):
+                val = cell.strip()
+                if date_day_pattern.match(val):
+                    date_cols.add(ci)
 
-            # Check column 0 for date parts
-            if date_day_pattern.match(col0):
-                # This is a date day like "29th" — flush any pending pairs
-                if team_buffer:
-                    _flush_team_pairs(team_buffer, current_date_full, fixtures, col3_list=[])
-                    team_buffer = []
-                current_date_day = col0
-                current_date_full = col0  # Will be completed by month row
-                continue
+        if not date_cols:
+            print(f"    [WARN] No date columns found in Leicester table")
+            continue
 
-            if col0.lower() in MONTHS:
-                # Month row (e.g. "April") — completes the date
-                current_date_full = f"{current_date_day} {col0}" if current_date_day else col0
-                continue
+        # Group nearby date columns (they should be the start of each fixture block)
+        # Sort and cluster — columns within 3 of each other are the same group
+        sorted_cols = sorted(date_cols)
+        groups = []
+        for col in sorted_cols:
+            if not groups or col - groups[-1][-1] > 5:
+                groups.append([col])
+            else:
+                groups[-1].append(col)
 
-            # Skip header/label rows (like "Shots", "W", etc.)
-            skip_words = ["shots", "w", "l", "d", "for", "agst", "home", "away", "pts", "points"]
-            if col0.lower() in skip_words or col2.lower() in skip_words:
-                continue
+        # For each group, use the minimum column index as the base
+        group_bases = [min(g) for g in groups]
+        print(f"    Detected {len(group_bases)} column group(s) starting at columns: {group_bases}")
 
-            # Column 2: team name
-            if col2 and col2.lower() not in skip_words:
-                # This is a team name — add to buffer with score info
-                score_info = col3 if col3 and any(c.isdigit() for c in col3) else ""
-                team_buffer.append({"name": col2, "score": score_info, "date": current_date_full})
+        # --- Process each column group ---
+        for base_col in group_bases:
+            date_col = base_col       # Date day/month
+            team_col = base_col + 2   # Team names
+            shots_col = base_col + 3  # Shots/scores
 
-        # Flush remaining pairs
-        if team_buffer:
-            _flush_team_pairs(team_buffer, current_date_full, fixtures, col3_list=[])
+            current_date_day = ""
+            current_date_full = ""
+            team_buffer = []
+
+            for row in rows:
+                col_date = row[date_col].strip() if len(row) > date_col else ""
+                col_team = row[team_col].strip() if len(row) > team_col else ""
+                col_shots = row[shots_col].strip() if len(row) > shots_col else ""
+
+                # Check for date day (e.g. "29th")
+                if date_day_pattern.match(col_date):
+                    if team_buffer:
+                        _flush_team_pairs(team_buffer, current_date_full, fixtures, col3_list=[])
+                        team_buffer = []
+                    current_date_day = col_date
+                    current_date_full = col_date
+                    continue
+
+                # Check for month name
+                if col_date.lower() in MONTHS:
+                    current_date_full = f"{current_date_day} {col_date}" if current_date_day else col_date
+                    continue
+
+                # Skip header/label rows
+                if col_date.lower() in SKIP_WORDS or col_team.lower() in SKIP_WORDS:
+                    continue
+
+                # Team name
+                if col_team and col_team.lower() not in SKIP_WORDS:
+                    score_info = col_shots if col_shots and any(c.isdigit() for c in col_shots) else ""
+                    team_buffer.append({"name": col_team, "score": score_info, "date": current_date_full})
+
+            # Flush remaining pairs for this group
+            if team_buffer:
+                _flush_team_pairs(team_buffer, current_date_full, fixtures, col3_list=[])
+
+    # Sort fixtures by date for consistent display
+    MONTH_ORDER = {m: i for i, m in enumerate(MONTHS)}
+    def date_sort_key(f):
+        parts = f.get("date", "").split()
+        if len(parts) >= 2:
+            day_match = date_day_pattern.match(parts[0])
+            day = int(day_match.group(1)) if day_match else 99
+            month = MONTH_ORDER.get(parts[1].lower(), 99)
+            return (month, day)
+        return (99, 99)
+
+    fixtures.sort(key=date_sort_key)
 
     print(f"    Leicester parsed: {len(fixtures)} Blaby fixtures found")
     for f in fixtures:
