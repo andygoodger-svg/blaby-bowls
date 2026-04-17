@@ -127,7 +127,21 @@ def fetch_google_sheet_csv(sheet_id, label="sheet"):
 
 
 def fetch_google_sheet_html(sheet_id, label="sheet"):
-    """Fallback: fetch a Google Sheet via htmlembed and parse the HTML table."""
+    """Fallback: try gviz/tq endpoint, then htmlembed with table parsing."""
+    # Try gviz/tq endpoint (sometimes works when export doesn't)
+    gviz_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
+    try:
+        r = requests.get(gviz_url, timeout=30)
+        if r.status_code == 200 and len(r.text) > 50:
+            reader = csv.reader(io.StringIO(r.text))
+            rows = [row for row in reader]
+            if rows:
+                print(f"    Got {len(rows)} rows via gviz/tq")
+                return rows
+    except Exception as e:
+        print(f"    [WARN] gviz/tq failed: {e}")
+
+    # Try htmlembed
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/htmlembed"
     try:
         r = requests.get(url, timeout=30)
@@ -137,7 +151,8 @@ def fetch_google_sheet_html(sheet_id, label="sheet"):
             for table in soup.find_all("table"):
                 for tr in table.find_all("tr"):
                     cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
-                    rows.append(cells)
+                    if any(c for c in cells):
+                        rows.append(cells)
             print(f"    Got {len(rows)} rows via htmlembed")
             return rows
         else:
@@ -687,7 +702,11 @@ def main():
     leic_table_html = parse_leicester_table_div1(leicester_data.get("tables"))
 
     # South Leics table
-    south_leics_table = south_leics["tables"] if south_leics["tables"] else '<p class="no-data">League tables will appear once the season starts (28th April 2026).</p>'
+    if south_leics["tables"]:
+        south_leics_table = south_leics["tables"]
+    else:
+        south_leics_table = '<p class="no-data">League tables will appear once the 2026 season starts (28th April). ' \
+            'You can also view them directly at <a href="https://sites.google.com/view/southleicestershiretriples/tables" target="_blank">the South Leics website</a>.</p>'
 
     files = {
         "index.html": gen_index(),
