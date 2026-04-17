@@ -691,7 +691,7 @@ def gen_fixtures(hinckley_data, south_leics, leicester_data):
                     fixtures.append({"date": f["date"], "home": home, "away": away, "score": None})
 
             b += f'<h3>{div_name}</h3>\n'
-            b += gen_fixture_table(f'{team_name} Fixtures — {div_name}', fixtures, show_date_rows=True)
+            b += gen_fixture_table(f'{team_name} Fixtures — {div_name}', fixtures)
     else:
         b += '<p class="no-data">No Blaby fixtures found yet. Season starts 28th April 2026.</p>\n'
 
