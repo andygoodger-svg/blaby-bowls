@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-Blaby Bowls Scraper v2
-Uses per-team fixture URLs for Hinckley (no duplicates),
-proper docx download URLs for Leicester,
-and notes South Leics JS limitation.
+Blaby Bowls Scraper v3
+- Hinckley: per-team fixture URLs (no duplicates)
+- Leicester: Division 1 ONLY (docx download)
+- South Leics: Google Sheets CSV export (no JS needed)
+- Telegram notifications on completion
 """
 import requests
 from bs4 import BeautifulSoup
-import os, subprocess, sys, re
+import os, subprocess, sys, re, csv, io
 from datetime import datetime
 
 OUTPUT_DIR = "/Volumes/SSD_1/blaby-bowls"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) BlabyScraper/2.0"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) BlabyScraper/3.0"}
 
 # Telegram notification
 TELEGRAM_BOT_TOKEN = "8732764989:AAH4rly4qwF3mZt-DEVzn6_wVlzZbDcoIA4"
@@ -30,7 +31,10 @@ def send_telegram(message):
     except Exception as e:
         print(f"  [WARN] Telegram error: {e}")
 
-# Hinckley team-specific URLs (no more division mixing)
+
+# =========================================================================
+# HINCKLEY - Per-team fixture pages (clean, no duplicates)
+# =========================================================================
 HINCKLEY_BASE = "https://www.bowlsresultstwo.co.uk/results24"
 HINCKLEY_TEAMS = [
     {"name": "Blaby A", "div": 1, "div_name": "Division 1", "team_id": 2},
@@ -38,25 +42,35 @@ HINCKLEY_TEAMS = [
     {"name": "Blaby C", "div": 4, "div_name": "Division 4", "team_id": 33},
 ]
 
-# Leicester docx URLs (use attachments.asp pattern)
+# =========================================================================
+# LEICESTER - Division 1 ONLY
+# =========================================================================
 LEICESTER_DOCX = {
     "div1": {
         "name": "Division 1",
         "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=0eec92c2%2D60ad%2D405e%2Db88d%2D59e311d126fd%2Edocx&o=Division%2D1%2DResults%2DFixtures%2Dand%2Dresults%2D2026%2Edocx"
-    },
-    "div2n": {
-        "name": "Division 2 North",
-        "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=f916e73d%2D27eb%2D456e%2Da68e%2D7a4dcbf4292d%2Edocx&o=Division%2D2%2DNorth%2DFixtures%2Dand%2DResults%2D2026%2Edocx"
-    },
-    "div2s": {
-        "name": "Division 2 South",
-        "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=8870c9b7%2D6e1a%2D4eca%2Db528%2Dc9d5832f007a%2Edocx&o=Division%2D2%2DSouth%2DFixtures%2Dand%2DResults%2D2026%2Edocx"
     },
     "tables": {
         "name": "League Tables 2026",
         "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=da5c79df%2D2126%2D472c%2D928d%2Ddd8f4e9999d3%2Edocx&o=League%2DTables%2D2026%2Edocx"
     }
 }
+
+# =========================================================================
+# SOUTH LEICS - Google Sheets IDs (extracted from embedded iframes)
+# =========================================================================
+# League/Fixtures page has 6 sheets (one per division)
+SOUTH_LEICS_FIXTURES_SHEETS = [
+    {"id": "1NIqYReT3YvUXoX8hNnqKnpkaEYNfha8ifOdHWyM2R_w", "name": "Div 1 Fixtures"},
+    {"id": "1XaP3Uv2l4pR71KwdXMNmdPknsvCX3wX0IZHDN5IaXfM", "name": "Div 2 Fixtures"},
+    {"id": "10J734xth5HL_Y_LTqkXCc6d1yJC1R1nhcKWK863_tIk", "name": "Div 3 Fixtures"},
+    {"id": "1-lOR1raGH6mcoZ0XQVKtuYGSXrwB68uMkH7xpG_7jf4", "name": "Div 4 Fixtures"},
+    {"id": "1eJS6sDVrdRL2ZKdrnCnzUCWdzbcyCl-NHTyt7-5oI78", "name": "Div 5 Fixtures"},
+    {"id": "1BYZA0ktPqoJCxf5P76m_H7mIYP9RDr_PAEEvcOxe8Qo", "name": "Div 6 Fixtures"},
+]
+SOUTH_LEICS_RESULTS_SHEET = "1-FoyAaFLqhC7POnhBP-KY7agQ5WXxEXe3WGB5rwpqXw"
+SOUTH_LEICS_TABLES_SHEET = "1b8vRpHme_v5oBJqJ9R3eHP5jQOoeLSbZObRmME7OYtI"
+
 
 CSS = """<style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -92,6 +106,25 @@ def fetch(url):
         return None
 
 
+def fetch_google_sheet_csv(sheet_id, label="sheet"):
+    """Fetch a Google Sheet as CSV. Returns list of rows (each row is a list of strings)."""
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0"
+    print(f"  Fetching Google Sheet CSV: {label}")
+    try:
+        r = requests.get(url, timeout=30)
+        if r.status_code == 200:
+            reader = csv.reader(io.StringIO(r.text))
+            rows = [row for row in reader]
+            print(f"    Got {len(rows)} rows")
+            return rows
+        else:
+            print(f"    [WARN] Status {r.status_code}")
+            return []
+    except Exception as e:
+        print(f"    [ERROR] {e}")
+        return []
+
+
 # =========================================================================
 # HINCKLEY - Per-team fixture pages (clean, no duplicates)
 # =========================================================================
@@ -110,9 +143,6 @@ def scrape_hinckley_team_fixtures(team):
         for row in rows:
             cells = [c.get_text(strip=True) for c in row.find_all("td")]
             if len(cells) >= 3:
-                # Format: Date | Opponent | Home/Away | [Score fields if played]
-                # or: Date | Opponent | Home/Away | Date | Opponent | Home/Away
-                # Team fixture pages show: date, opponent, H/A
                 date = cells[0]
                 opponent = cells[1]
                 home_away = cells[2] if len(cells) > 2 else ""
@@ -157,12 +187,10 @@ def scrape_hinckley_table(div_id):
     if not soup:
         return '<p class="no-data">No league table data available yet.</p>'
 
-    # Find tables with data
     for table in soup.find_all("table"):
         rows = table.find_all("tr")
         if len(rows) > 2:
             html = str(table)
-            # Highlight Blaby rows
             ns = BeautifulSoup(html, "html.parser")
             for row in ns.find_all("tr"):
                 if "blaby" in row.get_text().lower():
@@ -173,10 +201,10 @@ def scrape_hinckley_table(div_id):
 
 
 # =========================================================================
-# LEICESTER - Download and parse .docx files
+# LEICESTER - Division 1 only
 # =========================================================================
 def parse_leicester_docx(url, label):
-    """Download a .docx and extract Blaby-related data."""
+    """Download a .docx and extract data."""
     try:
         from docx import Document
         import tempfile
@@ -188,18 +216,17 @@ def parse_leicester_docx(url, label):
             f.write(r.content)
         doc = Document(tmp)
 
-        # Extract table rows containing "blaby"
+        # Extract ALL table rows (for full table display) and Blaby rows
         blaby_rows = []
         all_rows = []
         for t in doc.tables:
             header = [c.text.strip() for c in t.rows[0].cells] if t.rows else []
             for row in t.rows:
                 cells = [c.text.strip() for c in row.cells]
-                all_rows.append(cells)
+                all_rows.append({"cells": cells, "header": header})
                 if "blaby" in " ".join(cells).lower():
                     blaby_rows.append({"cells": cells, "header": header})
 
-        # Also get paragraphs
         blaby_paras = [p.text.strip() for p in doc.paragraphs if "blaby" in p.text.lower()]
 
         os.remove(tmp)
@@ -212,59 +239,214 @@ def parse_leicester_docx(url, label):
         return None
 
 
-# =========================================================================
-# SOUTH LEICESTERSHIRE TRIPLES
-# =========================================================================
-def scrape_south_leics():
-    """
-    South Leics uses Google Sites which renders via JavaScript.
-    Plain requests can't see the embedded Google Sheets content.
-    We try anyway in case it works, but this likely returns empty.
-    """
-    results = {"fixtures": [], "results": [], "tables": ""}
+def parse_leicester_table_div1(tables_data):
+    """Extract Division 1 section from the league tables docx."""
+    if not tables_data or not tables_data["all_rows"]:
+        return '<p class="no-data">No Leicester league table data yet.</p>'
 
-    for page in ["league", "results", "tables"]:
-        url = f"https://sites.google.com/view/southleicestershiretriples/{page}"
-        print(f"  South Leics {page}: {url}")
-        soup = fetch(url)
-        if not soup:
+    # The tables docx has all 3 divisions in sequence.
+    # We need to find the Division 1 section and stop before Division 2.
+    all_rows = tables_data["all_rows"]
+    div1_rows = []
+    in_div1 = False
+    found_header = False
+
+    for row_data in all_rows:
+        cells = row_data["cells"]
+        text = " ".join(cells).strip().lower()
+
+        # Detect division headers
+        if "division 1" in text and "division 2" not in text:
+            in_div1 = True
+            found_header = False
+            continue
+        elif "division 2" in text:
+            in_div1 = False
             continue
 
-        # Try to find embedded Google Sheets iframes
-        iframes = soup.find_all("iframe")
-        for iframe in iframes:
-            src = iframe.get("src", "")
-            if "docs.google.com" in src or "sheet" in src.lower():
-                print(f"    Found sheet iframe: {src[:80]}...")
-                sheet_soup = fetch(src)
-                if sheet_soup:
-                    for table in sheet_soup.find_all("table"):
-                        if "blaby" in table.get_text().lower():
-                            for row in table.find_all("tr"):
-                                if "blaby" in row.get_text().lower():
-                                    cells = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
-                                    if page == "league":
-                                        results["fixtures"].append(cells)
-                                    elif page == "results":
-                                        results["results"].append(cells)
+        if in_div1:
+            # Skip empty rows
+            if not any(c.strip() for c in cells):
+                continue
+            div1_rows.append(cells)
 
-                            if page == "tables":
-                                ns = BeautifulSoup(str(table), "html.parser")
-                                for row in ns.find_all("tr"):
-                                    if "blaby" in row.get_text().lower():
-                                        row["class"] = row.get("class", []) + ["blaby-row"]
-                                results["tables"] += str(ns)
+    if not div1_rows:
+        # Fallback: if no division headers found, just show all rows
+        # (the docx might just be a single Division 1 table)
+        div1_rows = [r["cells"] for r in all_rows if any(c.strip() for c in r["cells"])]
 
-        # Also check direct table content
-        for table in soup.find_all("table"):
-            if "blaby" in table.get_text().lower():
-                for row in table.find_all("tr"):
-                    if "blaby" in row.get_text().lower():
-                        cells = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
-                        if page in ["league"]:
-                            results["fixtures"].append(cells)
-                        elif page == "results":
-                            results["results"].append(cells)
+    if not div1_rows:
+        return '<p class="no-data">No Division 1 league table data yet.</p>'
+
+    # Build HTML table
+    html = '<table>\n'
+    for i, cells in enumerate(div1_rows):
+        # First row with column headers
+        is_header = i == 0 and any(h in " ".join(cells).lower() for h in ["pld", "played", "won", "pts", "team"])
+        is_blaby = "blaby" in " ".join(cells).lower()
+
+        if is_header:
+            html += '<tr>' + ''.join(f'<th>{c}</th>' for c in cells[:8] if c.strip()) + '</tr>\n'
+        else:
+            cls = ' class="blaby-row"' if is_blaby else ""
+            html += f'<tr{cls}>' + ''.join(f'<td>{c}</td>' for c in cells[:8] if c.strip() or i > 0) + '</tr>\n'
+    html += '</table>\n'
+    return html
+
+
+# =========================================================================
+# SOUTH LEICESTERSHIRE TRIPLES - Google Sheets CSV
+# =========================================================================
+def scrape_south_leics():
+    """Scrape South Leics via Google Sheets CSV export."""
+    results = {"fixtures": [], "results": [], "tables": "", "fixture_divs": {}}
+
+    # --- FIXTURES: Check all 6 division sheets for Blaby teams ---
+    print("  Fetching fixture sheets...")
+    for sheet in SOUTH_LEICS_FIXTURES_SHEETS:
+        rows = fetch_google_sheet_csv(sheet["id"], sheet["name"])
+        if not rows:
+            continue
+
+        # Find Blaby fixtures in this division
+        blaby_fixtures = []
+        current_date = ""
+        div_name = sheet["name"].replace(" Fixtures", "")
+
+        for row in rows:
+            if not any(cell.strip() for cell in row):
+                continue
+
+            # Check if this row is a date header
+            first_cell = row[0].strip() if row else ""
+            if re.match(r'\d{1,2}(st|nd|rd|th)\s+(January|February|March|April|May|June|July|August|September|October|November|December)', first_cell, re.IGNORECASE):
+                current_date = first_cell
+                continue
+
+            # Check if row mentions Blaby
+            row_text = " ".join(row).lower()
+            if "blaby" in row_text:
+                # Fixture format: Home team | [score] | Away team | [score]
+                # or just: Home team | Away team
+                clean = [c.strip() for c in row if c.strip()]
+                if len(clean) >= 2:
+                    blaby_fixtures.append({
+                        "date": current_date,
+                        "cells": clean,
+                        "div": div_name
+                    })
+
+        if blaby_fixtures:
+            results["fixture_divs"][div_name] = blaby_fixtures
+            results["fixtures"].extend(blaby_fixtures)
+            print(f"    {div_name}: {len(blaby_fixtures)} Blaby fixtures found")
+        else:
+            print(f"    {div_name}: no Blaby fixtures")
+
+    # --- RESULTS ---
+    print("  Fetching results sheet...")
+    rows = fetch_google_sheet_csv(SOUTH_LEICS_RESULTS_SHEET, "Match Results")
+    if rows:
+        current_date = ""
+        current_section = ""
+        for row in rows:
+            if not any(cell.strip() for cell in row):
+                continue
+            first_cell = row[0].strip() if row else ""
+
+            # Check for date headers
+            if re.match(r'\d{1,2}(st|nd|rd|th)\s+\w+\s+\d{4}', first_cell):
+                current_date = first_cell
+                continue
+
+            # Check for section headers (e.g. "SEMI FINALS", "QUARTER FINALS")
+            if first_cell and first_cell.isupper() and len(first_cell) > 3:
+                current_section = first_cell
+                continue
+
+            row_text = " ".join(row).lower()
+            if "blaby" in row_text:
+                clean = [c.strip() for c in row if c.strip()]
+                if clean:
+                    results["results"].append({
+                        "date": current_date,
+                        "section": current_section,
+                        "cells": clean
+                    })
+
+    # --- TABLES ---
+    print("  Fetching tables sheet...")
+    rows = fetch_google_sheet_csv(SOUTH_LEICS_TABLES_SHEET, "League Tables")
+    if rows:
+        # Parse the table data - find groups/divisions containing Blaby
+        current_group = ""
+        table_html = ""
+        current_table_rows = []
+        current_headers = []
+
+        for row in rows:
+            if not any(cell.strip() for cell in row):
+                # Empty row - might be end of a group
+                if current_table_rows:
+                    # Check if this group has Blaby
+                    group_text = " ".join(str(r) for r in current_table_rows).lower()
+                    if "blaby" in group_text:
+                        table_html += f'<h3>{current_group}</h3>\n<table>\n'
+                        if current_headers:
+                            table_html += '<tr>' + ''.join(f'<th>{h}</th>' for h in current_headers) + '</tr>\n'
+                        for tr in current_table_rows:
+                            is_blaby = "blaby" in " ".join(tr).lower()
+                            cls = ' class="blaby-row"' if is_blaby else ""
+                            table_html += f'<tr{cls}>' + ''.join(f'<td>{c}</td>' for c in tr) + '</tr>\n'
+                        table_html += '</table>\n'
+                    current_table_rows = []
+                    current_headers = []
+                continue
+
+            clean = [c.strip() for c in row]
+
+            # Check for group/division headers
+            first = clean[0] if clean else ""
+            if re.match(r'(Group|Division)\s+', first, re.IGNORECASE) and len([c for c in clean if c]) <= 2:
+                if current_table_rows:
+                    group_text = " ".join(str(r) for r in current_table_rows).lower()
+                    if "blaby" in group_text:
+                        table_html += f'<h3>{current_group}</h3>\n<table>\n'
+                        if current_headers:
+                            table_html += '<tr>' + ''.join(f'<th>{h}</th>' for h in current_headers) + '</tr>\n'
+                        for tr in current_table_rows:
+                            is_blaby = "blaby" in " ".join(tr).lower()
+                            cls = ' class="blaby-row"' if is_blaby else ""
+                            table_html += f'<tr{cls}>' + ''.join(f'<td>{c}</td>' for c in tr) + '</tr>\n'
+                        table_html += '</table>\n'
+                current_table_rows = []
+                current_headers = []
+                current_group = first
+                continue
+
+            # Check for header rows (Pl., W, D, L, etc.)
+            if any(h in " ".join(clean).upper() for h in ["PL.", "PL", "PLAYED", "PTS"]):
+                current_headers = [c for c in clean if c]
+                continue
+
+            # Regular data row
+            if any(c for c in clean if c):
+                current_table_rows.append([c for c in clean if c])
+
+        # Flush last group
+        if current_table_rows:
+            group_text = " ".join(str(r) for r in current_table_rows).lower()
+            if "blaby" in group_text:
+                table_html += f'<h3>{current_group}</h3>\n<table>\n'
+                if current_headers:
+                    table_html += '<tr>' + ''.join(f'<th>{h}</th>' for h in current_headers) + '</tr>\n'
+                for tr in current_table_rows:
+                    is_blaby = "blaby" in " ".join(tr).lower()
+                    cls = ' class="blaby-row"' if is_blaby else ""
+                    table_html += f'<tr{cls}>' + ''.join(f'<td>{c}</td>' for c in tr) + '</tr>\n'
+                table_html += '</table>\n'
+
+        results["tables"] = table_html
 
     return results
 
@@ -295,44 +477,49 @@ def gen_fixtures(hinckley_data, south_leics, leicester_data):
 
     # South Leics
     b += '<div class="league-header">South Leicestershire Triples League</div>\n'
-    if south_leics["fixtures"]:
-        b += '<table><tr><th>Fixture Details</th></tr>\n'
-        for f in south_leics["fixtures"]:
-            b += f'<tr class="blaby-match"><td>{" | ".join(f)}</td></tr>\n'
-        b += '</table>\n'
+    if south_leics["fixture_divs"]:
+        for div_name, fixtures in south_leics["fixture_divs"].items():
+            b += f'<h3>{div_name}</h3>\n'
+            b += '<table><tr><th>Date</th><th>Home</th><th>V</th><th>Away</th></tr>\n'
+            current_date = ""
+            for f in fixtures:
+                if f["date"] and f["date"] != current_date:
+                    current_date = f["date"]
+                    b += f'<tr><td colspan="4" class="fixture-date">{current_date}</td></tr>\n'
+                cells = f["cells"]
+                if len(cells) >= 2:
+                    home = cells[0]
+                    away = cells[-1] if len(cells) == 2 else cells[1]
+                    # If there are scores in between, show them
+                    if len(cells) == 4:
+                        home = cells[0]
+                        away = cells[2]
+                    b += f'<tr class="blaby-match"><td></td><td>{home}</td><td>V</td><td>{away}</td></tr>\n'
+            b += '</table>\n'
     else:
-        b += '<p class="no-data">Season starts 28th April 2026. Fixtures will appear once available.</p>\n'
+        b += '<p class="no-data">No Blaby fixtures found yet. Season starts 28th April 2026.</p>\n'
 
-    # Leicester
-    b += '<div class="league-header">Leicester Bowls League</div>\n'
-    has_leic = False
-    for key in ["div1", "div2n", "div2s"]:
-        data = leicester_data.get(key)
-        if data and data["rows"]:
-            # Filter for fixture-like rows (those without scores/digits)
-            fixture_rows = [r for r in data["rows"] if not any(any(c.isdigit() for c in cell) for cell in r["cells"][1:])]
-            if fixture_rows:
-                b += f'<h3>{LEICESTER_DOCX[key]["name"]}</h3>\n'
-                b += '<table><tr><th>' + '</th><th>'.join(fixture_rows[0].get("header", ["Details"])[:6]) + '</th></tr>\n'
-                for r in fixture_rows:
-                    b += f'<tr class="blaby-match"><td>' + '</td><td>'.join(r["cells"][:6]) + '</td></tr>\n'
-                b += '</table>\n'
-                has_leic = True
-    if not has_leic:
-        leic_found = any(leicester_data.get(k, {}).get("rows") for k in ["div1", "div2n", "div2s"])
-        if leic_found:
-            # Show whatever we found
-            for key in ["div1", "div2n", "div2s"]:
-                data = leicester_data.get(key)
-                if data and data["rows"]:
-                    b += f'<h3>{LEICESTER_DOCX[key]["name"]}</h3>\n'
-                    b += '<table>\n'
-                    for r in data["rows"]:
-                        b += f'<tr class="blaby-match"><td>' + '</td><td>'.join(r["cells"][:6]) + '</td></tr>\n'
-                    b += '</table>\n'
-                    has_leic = True
-    if not has_leic:
-        b += '<p class="no-data">No Blaby fixtures found in Leicester Bowls League documents yet.</p>\n'
+    # Leicester - Division 1 only
+    b += '<div class="league-header">Leicester Bowls League — Division 1</div>\n'
+    leic_div1 = leicester_data.get("div1")
+    if leic_div1 and leic_div1["rows"]:
+        # Fixtures = rows without scores
+        fixture_rows = [r for r in leic_div1["rows"] if not any(any(c.isdigit() for c in cell) for cell in r["cells"][1:])]
+        if fixture_rows:
+            b += '<table>\n'
+            if fixture_rows[0].get("header"):
+                b += '<tr><th>' + '</th><th>'.join(h for h in fixture_rows[0]["header"][:6] if h) + '</th></tr>\n'
+            for r in fixture_rows:
+                b += f'<tr class="blaby-match"><td>' + '</td><td>'.join(c for c in r["cells"][:6] if c) + '</td></tr>\n'
+            b += '</table>\n'
+        else:
+            # Show all Blaby rows
+            b += '<table>\n'
+            for r in leic_div1["rows"]:
+                b += f'<tr class="blaby-match"><td>' + '</td><td>'.join(c for c in r["cells"][:6] if c) + '</td></tr>\n'
+            b += '</table>\n'
+    else:
+        b += '<p class="no-data">No Blaby Division 1 fixtures found yet.</p>\n'
 
     return html_wrap("Blaby Bowls - Fixtures 2026", b)
 
@@ -348,44 +535,47 @@ def gen_results(hinckley_data, south_leics, leicester_data):
             current_div = team["div_name"]
             b += f'<h3>{current_div}</h3>\n'
 
-        results = [f for f in hinckley_data.get(team["name"], []) if f["score"] is not None]
-        if results:
+        results_list = [f for f in hinckley_data.get(team["name"], []) if f["score"] is not None]
+        if results_list:
             b += f'<table><tr><th colspan="4">{team["name"]} Results</th></tr>\n'
             b += '<tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th></tr>\n'
-            for f in results:
+            for f in results_list:
                 b += f'<tr class="blaby-match"><td>{f["date"]}</td><td>{f["home"]}</td><td class="score">{f["score"]}</td><td>{f["away"]}</td></tr>\n'
             b += '</table>\n'
         else:
-            b += f'<p class="no-data">No {team["name"]} results yet - season starts May 2026.</p>\n'
+            b += f'<p class="no-data">No {team["name"]} results yet.</p>\n'
 
     # South Leics
     b += '<div class="league-header">South Leicestershire Triples League</div>\n'
     if south_leics["results"]:
-        b += '<table><tr><th>Result Details</th></tr>\n'
+        b += '<table><tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th><th>Score</th></tr>\n'
         for r in south_leics["results"]:
-            b += f'<tr class="blaby-match"><td>{" | ".join(r)}</td></tr>\n'
+            cells = r["cells"]
+            date = r["date"]
+            if len(cells) >= 4:
+                b += f'<tr class="blaby-match"><td>{date}</td><td>{cells[0]}</td><td class="score">{cells[1]}</td><td>{cells[2]}</td><td class="score">{cells[3]}</td></tr>\n'
+            elif len(cells) >= 2:
+                b += f'<tr class="blaby-match"><td>{date}</td><td colspan="4">{" | ".join(cells)}</td></tr>\n'
         b += '</table>\n'
     else:
-        b += '<p class="no-data">Season starts 28th April 2026. Results will appear once matches are played.</p>\n'
+        b += '<p class="no-data">No South Leics results yet. Season starts 28th April 2026.</p>\n'
 
-    # Leicester
-    b += '<div class="league-header">Leicester Bowls League</div>\n'
-    has_leic = False
-    for key in ["div1", "div2n", "div2s"]:
-        data = leicester_data.get(key)
-        if data and data["rows"]:
-            result_rows = [r for r in data["rows"] if any(any(c.isdigit() for c in cell) for cell in r["cells"][1:])]
-            if result_rows:
-                b += f'<h3>{LEICESTER_DOCX[key]["name"]}</h3>\n'
-                b += '<table>\n'
-                if result_rows[0].get("header"):
-                    b += '<tr><th>' + '</th><th>'.join(result_rows[0]["header"][:6]) + '</th></tr>\n'
-                for r in result_rows:
-                    b += f'<tr class="blaby-match"><td>' + '</td><td>'.join(r["cells"][:6]) + '</td></tr>\n'
-                b += '</table>\n'
-                has_leic = True
-    if not has_leic:
-        b += '<p class="no-data">No results available yet for Leicester Bowls League.</p>\n'
+    # Leicester - Division 1 only
+    b += '<div class="league-header">Leicester Bowls League — Division 1</div>\n'
+    leic_div1 = leicester_data.get("div1")
+    if leic_div1 and leic_div1["rows"]:
+        result_rows = [r for r in leic_div1["rows"] if any(any(c.isdigit() for c in cell) for cell in r["cells"][1:])]
+        if result_rows:
+            b += '<table>\n'
+            if result_rows[0].get("header"):
+                b += '<tr><th>' + '</th><th>'.join(h for h in result_rows[0]["header"][:6] if h) + '</th></tr>\n'
+            for r in result_rows:
+                b += f'<tr class="blaby-match"><td>' + '</td><td>'.join(c for c in r["cells"][:6] if c) + '</td></tr>\n'
+            b += '</table>\n'
+        else:
+            b += '<p class="no-data">No Division 1 results yet.</p>\n'
+    else:
+        b += '<p class="no-data">No Division 1 results available yet.</p>\n'
 
     return html_wrap("Blaby Bowls - Results 2026", b)
 
@@ -407,7 +597,7 @@ def gen_index():
 <tr><td><a href="table-hinckley-div1.html">Hinckley &amp; District Triples</a></td><td>Division 1 (Blaby A, Blaby B)</td></tr>
 <tr><td><a href="table-hinckley-div4.html">Hinckley &amp; District Triples</a></td><td>Division 4 (Blaby C)</td></tr>
 <tr><td><a href="table-south-leics.html">South Leicestershire Triples</a></td><td>League Table</td></tr>
-<tr><td><a href="table-leicester.html">Leicester Bowls League</a></td><td>League Table</td></tr></table>
+<tr><td><a href="table-leicester.html">Leicester Bowls League</a></td><td>Division 1</td></tr></table>
 <h3>Source Websites</h3>
 <table><tr><th>League</th><th>Link</th></tr>
 <tr><td>Hinckley &amp; District Triples</td><td><a href="https://www.bowlsresultstwo.co.uk/hinckley/" target="_blank">bowlsresultstwo.co.uk</a></td></tr>
@@ -436,7 +626,7 @@ def git_push():
 
 def main():
     print("=" * 60)
-    print(f"Blaby Bowls Scraper v2 - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"Blaby Bowls Scraper v3 - {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print("=" * 60)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -454,40 +644,27 @@ def main():
     # --- SOUTH LEICS ---
     print("\n[2/3] South Leicestershire Triples League...")
     south_leics = scrape_south_leics()
-    print(f"    {len(south_leics['fixtures'])} fixtures, {len(south_leics['results'])} results")
+    sl_fix = sum(len(v) for v in south_leics["fixture_divs"].values())
+    print(f"    Total: {sl_fix} fixtures, {len(south_leics['results'])} results")
 
-    # --- LEICESTER ---
-    print("\n[3/3] Leicester Bowls League...")
+    # --- LEICESTER (Division 1 only) ---
+    print("\n[3/3] Leicester Bowls League (Division 1 only)...")
     leicester_data = {}
     for key, info in LEICESTER_DOCX.items():
         leicester_data[key] = parse_leicester_docx(info["url"], info["name"])
         if leicester_data[key]:
-            print(f"    {info['name']}: {len(leicester_data[key]['rows'])} Blaby rows")
+            print(f"    {info['name']}: {len(leicester_data[key]['rows'])} Blaby rows, {len(leicester_data[key]['all_rows'])} total rows")
         else:
             print(f"    {info['name']}: failed or no data")
 
     # --- GENERATE HTML ---
     print("\nGenerating HTML files...")
 
-    # Leicester table content
-    leic_table_html = '<p class="no-data">No Leicester league table data yet.</p>'
-    leic_tables = leicester_data.get("tables")
-    if leic_tables and leic_tables["rows"]:
-        leic_table_html = '<table>\n'
-        if leic_tables["rows"][0].get("header"):
-            leic_table_html += '<tr><th>' + '</th><th>'.join(leic_tables["rows"][0]["header"][:8]) + '</th></tr>\n'
-        for r in leic_tables["rows"]:
-            leic_table_html += '<tr class="blaby-row"><td>' + '</td><td>'.join(r["cells"][:8]) + '</td></tr>\n'
-        leic_table_html += '</table>\n'
-        # Also show full table context if available
-        if leic_tables["all_rows"]:
-            leic_table_html = '<table>\n'
-            for r in leic_tables["all_rows"]:
-                cls = ' class="blaby-row"' if "blaby" in " ".join(r).lower() else ""
-                leic_table_html += f'<tr{cls}><td>' + '</td><td>'.join(r[:8]) + '</td></tr>\n'
-            leic_table_html += '</table>\n'
+    # Leicester table - Division 1 only
+    leic_table_html = parse_leicester_table_div1(leicester_data.get("tables"))
 
-    south_leics_table = south_leics["tables"] if south_leics["tables"] else '<p class="no-data">South Leics table data is embedded in Google Sheets and not available via automated scraping. Check the website directly.</p>'
+    # South Leics table
+    south_leics_table = south_leics["tables"] if south_leics["tables"] else '<p class="no-data">League tables will appear once the season starts (28th April 2026).</p>'
 
     files = {
         "index.html": gen_index(),
@@ -496,7 +673,7 @@ def main():
         "table-hinckley-div1.html": gen_table_page("Hinckley & District Triples", "Division 1", hinckley_tables.get(1, '<p class="no-data">No data yet.</p>')),
         "table-hinckley-div4.html": gen_table_page("Hinckley & District Triples", "Division 4", hinckley_tables.get(4, '<p class="no-data">No data yet.</p>')),
         "table-south-leics.html": gen_table_page("South Leicestershire Triples", "League Table", south_leics_table),
-        "table-leicester.html": gen_table_page("Leicester Bowls League", "League Table", leic_table_html),
+        "table-leicester.html": gen_table_page("Leicester Bowls League", "Division 1", leic_table_html),
     }
 
     for fn, content in files.items():
@@ -512,14 +689,14 @@ def main():
     # --- TELEGRAM NOTIFICATION ---
     now = datetime.now().strftime("%d %b %Y %H:%M")
     h_total = sum(len(hinckley_data.get(t["name"], [])) for t in HINCKLEY_TEAMS)
-    l_total = sum(len(leicester_data.get(k, {}).get("rows", [])) for k in ["div1", "div2n", "div2s"])
+    l_total = len(leicester_data.get("div1", {}).get("rows", []) if leicester_data.get("div1") else [])
 
     if pushed:
         msg = (
             f"<b>Blaby Bowls Updated</b> - {now}\n\n"
             f"Hinckley: {h_total} fixtures\n"
-            f"Leicester: {l_total} Blaby rows\n"
-            f"South Leics: {len(south_leics['fixtures'])} fixtures\n\n"
+            f"Leicester Div 1: {l_total} Blaby rows\n"
+            f"South Leics: {sl_fix} fixtures, {len(south_leics['results'])} results\n\n"
             f"<a href='https://andygoodger-svg.github.io/blaby-bowls/'>View site</a>"
         )
         send_telegram(msg)
