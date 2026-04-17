@@ -13,11 +13,22 @@ tr.blaby-match{background:#e8f5e9}
 .no-data{color:#888;font-style:italic;padding:10px}
 .fixture-date{background:#1a5c2e;color:#fff;padding:4px 8px;font-weight:600;font-size:.9em}
 .score{font-weight:700;color:#1a5c2e}
-.league-header{background:#2d7a45;color:#fff;padding:8px;font-size:1em;margin-top:15px}
+.league-header{background:#2d7a45;color:#fff;padding:8px 12px;font-size:1.05em;margin-top:20px;border-radius:4px}
+.team-header{background:#1a5c2e;color:#fff;padding:6px 10px;font-weight:700;font-size:.9em;border-radius:3px 3px 0 0;margin-top:12px}
 </style></head><body><h2>South Leicestershire Triples</h2>
 <h3>League Table</h3>
 <h3>League Tables 2026</h3>
 <p class="no-data">League tables will appear here once the 2026 season is underway (first matches 28th April). Check back after the first round of games.</p>
 <h3>Partridge Cup 2026</h3>
 <p class="no-data">Partridge Cup tables will appear here once the 2026 competition starts.</p>
-<p class="updated">Last updated: 17 Apr 2026 08:31</p></body></html>
+<p class="updated">Last updated: 17 Apr 2026 10:39</p><script>
+(function(){
+  function sendHeight(){
+    var h = document.documentElement.scrollHeight || document.body.scrollHeight;
+    window.parent.postMessage({type:'iframeHeight', height: h + 20}, '*');
+  }
+  window.addEventListener('load', sendHeight);
+  window.addEventListener('resize', sendHeight);
+  setTimeout(sendHeight, 500);
+})();
+</script></body></html>

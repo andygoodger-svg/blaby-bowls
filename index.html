@@ -13,7 +13,8 @@ tr.blaby-match{background:#e8f5e9}
 .no-data{color:#888;font-style:italic;padding:10px}
 .fixture-date{background:#1a5c2e;color:#fff;padding:4px 8px;font-weight:600;font-size:.9em}
 .score{font-weight:700;color:#1a5c2e}
-.league-header{background:#2d7a45;color:#fff;padding:8px;font-size:1em;margin-top:15px}
+.league-header{background:#2d7a45;color:#fff;padding:8px 12px;font-size:1.05em;margin-top:20px;border-radius:4px}
+.team-header{background:#1a5c2e;color:#fff;padding:6px 10px;font-weight:700;font-size:.9em;border-radius:3px 3px 0 0;margin-top:12px}
 </style></head><body><h2>Blaby Bowls Club - 2026 Season</h2>
 <p>Auto-updated fixtures, results, and league tables for all Blaby teams.</p>
 <h3>Fixtures &amp; Results</h3>
@@ -30,4 +31,14 @@ tr.blaby-match{background:#e8f5e9}
 <table><tr><th>League</th><th>Link</th></tr>
 <tr><td>Hinckley &amp; District Triples</td><td><a href="https://www.bowlsresultstwo.co.uk/hinckley/" target="_blank">bowlsresultstwo.co.uk</a></td></tr>
 <tr><td>South Leicestershire Triples</td><td><a href="https://sites.google.com/view/southleicestershiretriples/" target="_blank">Google Sites</a></td></tr>
-<tr><td>Leicester Bowls League</td><td><a href="https://www.leicesterbowlsleague.co.uk/community/leicester-bowls-league-15027/" target="_blank">leicesterbowlsleague.co.uk</a></td></tr></table><p class="updated">Last updated: 17 Apr 2026 08:31</p></body></html>
+<tr><td>Leicester Bowls League</td><td><a href="https://www.leicesterbowlsleague.co.uk/community/leicester-bowls-league-15027/" target="_blank">leicesterbowlsleague.co.uk</a></td></tr></table><p class="updated">Last updated: 17 Apr 2026 10:39</p><script>
+(function(){
+  function sendHeight(){
+    var h = document.documentElement.scrollHeight || document.body.scrollHeight;
+    window.parent.postMessage({type:'iframeHeight', height: h + 20}, '*');
+  }
+  window.addEventListener('load', sendHeight);
+  window.addEventListener('resize', sendHeight);
+  setTimeout(sendHeight, 500);
+})();
+</script></body></html>

@@ -87,13 +87,27 @@ tr.blaby-match{background:#e8f5e9}
 .no-data{color:#888;font-style:italic;padding:10px}
 .fixture-date{background:#1a5c2e;color:#fff;padding:4px 8px;font-weight:600;font-size:.9em}
 .score{font-weight:700;color:#1a5c2e}
-.league-header{background:#2d7a45;color:#fff;padding:8px;font-size:1em;margin-top:15px}
+.league-header{background:#2d7a45;color:#fff;padding:8px 12px;font-size:1.05em;margin-top:20px;border-radius:4px}
+.team-header{background:#1a5c2e;color:#fff;padding:6px 10px;font-weight:700;font-size:.9em;border-radius:3px 3px 0 0;margin-top:12px}
 </style>"""
+
+# Auto-resize script for iframes — sends actual content height to parent
+IFRAME_RESIZE_JS = """<script>
+(function(){
+  function sendHeight(){
+    var h = document.documentElement.scrollHeight || document.body.scrollHeight;
+    window.parent.postMessage({type:'iframeHeight', height: h + 20}, '*');
+  }
+  window.addEventListener('load', sendHeight);
+  window.addEventListener('resize', sendHeight);
+  setTimeout(sendHeight, 500);
+})();
+</script>"""
 
 
 def html_wrap(title, body):
     now = datetime.now().strftime("%d %b %Y %H:%M")
-    return f'<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>{title}</title>{CSS}</head><body>{body}<p class="updated">Last updated: {now}</p></body></html>'
+    return f'<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>{title}</title>{CSS}</head><body>{body}<p class="updated">Last updated: {now}</p>{IFRAME_RESIZE_JS}</body></html>'
 
 
 def fetch(url):
@@ -242,7 +256,7 @@ def scrape_hinckley_table(div_id):
 # LEICESTER - Division 1 only
 # =========================================================================
 def parse_leicester_docx(url, label):
-    """Download a .docx and extract data."""
+    """Download a .docx and extract data. Returns structured fixture/result data."""
     try:
         from docx import Document
         import tempfile
@@ -257,24 +271,190 @@ def parse_leicester_docx(url, label):
         # Extract ALL table rows (for full table display) and Blaby rows
         blaby_rows = []
         all_rows = []
-        for t in doc.tables:
+        tables_raw = []  # Keep raw table structures for better parsing
+
+        for t_idx, t in enumerate(doc.tables):
+            table_rows = []
             header = [c.text.strip() for c in t.rows[0].cells] if t.rows else []
             for row in t.rows:
                 cells = [c.text.strip() for c in row.cells]
-                all_rows.append({"cells": cells, "header": header})
+                row_data = {"cells": cells, "header": header, "table_idx": t_idx}
+                all_rows.append(row_data)
+                table_rows.append(cells)
                 if "blaby" in " ".join(cells).lower():
-                    blaby_rows.append({"cells": cells, "header": header})
+                    blaby_rows.append(row_data)
+            tables_raw.append({"header": header, "rows": table_rows})
 
-        blaby_paras = [p.text.strip() for p in doc.paragraphs if "blaby" in p.text.lower()]
+        # Extract all paragraphs (for fixture dates context)
+        all_paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+        blaby_paras = [p for p in all_paras if "blaby" in p.lower()]
+
+        # DEBUG: Print raw table structure so we can understand the format
+        print(f"    DEBUG: {len(doc.tables)} table(s), {len(all_rows)} total rows, {len(blaby_rows)} Blaby rows")
+        print(f"    DEBUG: {len(all_paras)} paragraphs")
+        for t_idx, t_data in enumerate(tables_raw):
+            print(f"    DEBUG Table {t_idx}: header={t_data['header'][:6]}, {len(t_data['rows'])} rows")
+            for r_idx, row in enumerate(t_data['rows'][:3]):  # Show first 3 rows
+                print(f"      Row {r_idx}: {row[:6]}")
+            if len(t_data['rows']) > 3:
+                print(f"      ... ({len(t_data['rows'])-3} more rows)")
+        # Show first few paragraphs for context
+        for p in all_paras[:5]:
+            print(f"    DEBUG Para: '{p[:80]}'")
 
         os.remove(tmp)
-        return {"rows": blaby_rows, "all_rows": all_rows, "paragraphs": blaby_paras}
+        return {
+            "rows": blaby_rows,
+            "all_rows": all_rows,
+            "paragraphs": blaby_paras,
+            "all_paras": all_paras,
+            "tables_raw": tables_raw
+        }
     except ImportError:
         print("  [WARN] python-docx not installed")
         return None
     except Exception as e:
         print(f"  [ERROR] docx parse: {e}")
         return None
+
+
+def parse_leicester_fixtures_structured(div1_data):
+    """Parse Leicester Div 1 docx into structured fixture list with dates.
+
+    The docx typically has a table layout where:
+    - Header row contains dates (e.g., "29th April", "6th May", etc.)
+    - Each column under a date lists fixture pairs (home team, then away team)
+    - OR the table has columns: Date | Home | Away | Score
+
+    We try multiple strategies to extract the data.
+    """
+    if not div1_data:
+        return []
+
+    tables_raw = div1_data.get("tables_raw", [])
+    all_paras = div1_data.get("all_paras", [])
+    fixtures = []
+
+    # Strategy 1: Table with Date/Home/Away columns
+    for t_data in tables_raw:
+        header = t_data["header"]
+        header_lower = [h.lower() for h in header]
+
+        # Check if header has recognisable column names
+        has_date_col = any("date" in h for h in header_lower)
+        has_home_col = any("home" in h for h in header_lower)
+        has_away_col = any("away" in h for h in header_lower)
+
+        if has_home_col or has_away_col:
+            # Structured table with named columns
+            for row in t_data["rows"][1:]:  # Skip header
+                if not any(c.strip() for c in row):
+                    continue
+                row_text = " ".join(row).lower()
+                if "blaby" not in row_text:
+                    continue
+
+                date_val = row[0] if len(row) > 0 else ""
+                home_val = row[1] if len(row) > 1 else ""
+                away_val = row[2] if len(row) > 2 else ""
+                score_val = ""
+                if len(row) > 3 and any(c.isdigit() for c in row[3]):
+                    score_val = row[3]
+
+                fixtures.append({
+                    "date": date_val.strip(),
+                    "home": home_val.strip(),
+                    "away": away_val.strip(),
+                    "score": score_val.strip() if score_val.strip() else None
+                })
+            if fixtures:
+                return fixtures
+
+    # Strategy 2: Table where header row = dates, columns = fixture pairs
+    # Each column has pairs of teams (home row then away row)
+    for t_data in tables_raw:
+        header = t_data["header"]
+        rows = t_data["rows"]
+
+        # Check if header cells look like dates
+        date_pattern = re.compile(r'\d{1,2}(st|nd|rd|th)', re.IGNORECASE)
+        date_cols = [(i, h) for i, h in enumerate(header) if date_pattern.search(h)]
+
+        if date_cols and len(rows) > 1:
+            # Column-based fixture layout
+            for col_idx, date_str in date_cols:
+                # Get all values in this column (skip header)
+                col_vals = []
+                for row in rows[1:]:
+                    if col_idx < len(row):
+                        val = row[col_idx].strip()
+                        # Handle cells with newlines (merged fixture pairs)
+                        if '\n' in val:
+                            parts = [p.strip() for p in val.split('\n') if p.strip()]
+                            col_vals.extend(parts)
+                        elif val:
+                            col_vals.append(val)
+
+                # Pair up consecutive entries as Home/Away
+                for j in range(0, len(col_vals) - 1, 2):
+                    home = col_vals[j]
+                    away = col_vals[j + 1]
+                    if "blaby" in home.lower() or "blaby" in away.lower():
+                        fixtures.append({
+                            "date": date_str.strip(),
+                            "home": home,
+                            "away": away,
+                            "score": None
+                        })
+            if fixtures:
+                return fixtures
+
+    # Strategy 3: Single-column table with team pairs
+    # Try pairing consecutive Blaby-related rows
+    for t_data in tables_raw:
+        header = t_data["header"]
+        rows = t_data["rows"]
+        date_str = header[0] if header else ""
+
+        # Get all non-empty, non-header row values
+        team_names = []
+        for row in rows[1:]:
+            for cell in row:
+                val = cell.strip()
+                if val and val != header[0] if header else True:
+                    # Handle cells with newlines
+                    if '\n' in val:
+                        parts = [p.strip() for p in val.split('\n') if p.strip()]
+                        team_names.extend(parts)
+                    else:
+                        team_names.append(val)
+
+        # Pair consecutive teams
+        for j in range(0, len(team_names) - 1, 2):
+            home = team_names[j]
+            away = team_names[j + 1]
+            if "blaby" in home.lower() or "blaby" in away.lower():
+                fixtures.append({
+                    "date": date_str,
+                    "home": home,
+                    "away": away,
+                    "score": None
+                })
+
+    # Strategy 4: Check paragraphs for fixture info (e.g., "Blaby v Countesthorpe")
+    if not fixtures:
+        for para in all_paras:
+            if "blaby" in para.lower() and (" v " in para.lower() or " vs " in para.lower()):
+                parts = re.split(r'\s+[vV][sS]?\s+', para)
+                if len(parts) == 2:
+                    fixtures.append({
+                        "date": "",
+                        "home": parts[0].strip(),
+                        "away": parts[1].strip(),
+                        "score": None
+                    })
+
+    return fixtures
 
 
 def parse_leicester_table_div1(tables_data):
@@ -287,7 +467,6 @@ def parse_leicester_table_div1(tables_data):
     all_rows = tables_data["all_rows"]
     div1_rows = []
     in_div1 = False
-    found_header = False
 
     for row_data in all_rows:
         cells = row_data["cells"]
@@ -296,7 +475,6 @@ def parse_leicester_table_div1(tables_data):
         # Detect division headers
         if "division 1" in text and "division 2" not in text:
             in_div1 = True
-            found_header = False
             continue
         elif "division 2" in text:
             in_div1 = False
@@ -310,7 +488,6 @@ def parse_leicester_table_div1(tables_data):
 
     if not div1_rows:
         # Fallback: if no division headers found, just show all rows
-        # (the docx might just be a single Division 1 table)
         div1_rows = [r["cells"] for r in all_rows if any(c.strip() for c in r["cells"])]
 
     if not div1_rows:
@@ -319,7 +496,6 @@ def parse_leicester_table_div1(tables_data):
     # Build HTML table
     html = '<table>\n'
     for i, cells in enumerate(div1_rows):
-        # First row with column headers
         is_header = i == 0 and any(h in " ".join(cells).lower() for h in ["pld", "played", "won", "pts", "team"])
         is_blaby = "blaby" in " ".join(cells).lower()
 
@@ -494,10 +670,35 @@ def scrape_south_leics():
 # =========================================================================
 # HTML GENERATION
 # =========================================================================
+def gen_fixture_table(team_label, fixtures, show_date_rows=False):
+    """Generate a consistent fixture table for any league.
+    fixtures: list of dicts with keys: date, home, away (and optionally score)
+    """
+    upcoming = [f for f in fixtures if not f.get("score")]
+    if not upcoming:
+        return f'<p class="no-data">No upcoming {team_label} fixtures found.</p>\n'
+
+    html = f'<div class="team-header">{team_label}</div>\n'
+    html += '<table>\n'
+    html += '<tr><th>Date</th><th>Home</th><th></th><th>Away</th></tr>\n'
+
+    current_date = ""
+    for f in upcoming:
+        date_str = f.get("date", "")
+        if show_date_rows and date_str and date_str != current_date:
+            current_date = date_str
+            html += f'<tr><td colspan="4" class="fixture-date">{current_date}</td></tr>\n'
+            date_str = ""  # Don't repeat date in the row
+
+        html += f'<tr class="blaby-match"><td>{date_str if not show_date_rows else ""}</td><td>{f["home"]}</td><td>V</td><td>{f["away"]}</td></tr>\n'
+    html += '</table>\n'
+    return html
+
+
 def gen_fixtures(hinckley_data, south_leics, leicester_data):
     b = "<h2>Blaby Bowls - Upcoming Fixtures 2026</h2>\n"
 
-    # Hinckley
+    # --- Hinckley ---
     b += '<div class="league-header">Hinckley &amp; District Triples League</div>\n'
     current_div = None
     for team in HINCKLEY_TEAMS:
@@ -505,69 +706,99 @@ def gen_fixtures(hinckley_data, south_leics, leicester_data):
             current_div = team["div_name"]
             b += f'<h3>{current_div}</h3>\n'
 
-        fixtures = [f for f in hinckley_data.get(team["name"], []) if f["score"] is None]
-        if fixtures:
-            b += f'<table><tr><th colspan="4">{team["name"]} Fixtures</th></tr>\n'
-            b += '<tr><th>Date</th><th>Home</th><th></th><th>Away</th></tr>\n'
-            for f in fixtures:
-                b += f'<tr class="blaby-match"><td>{f["date"]}</td><td>{f["home"]}</td><td>V</td><td>{f["away"]}</td></tr>\n'
-            b += '</table>\n'
-        else:
-            b += f'<p class="no-data">No upcoming {team["name"]} fixtures found.</p>\n'
+        raw_fixtures = hinckley_data.get(team["name"], [])
+        fixtures = [{"date": f["date"], "home": f["home"], "away": f["away"], "score": f["score"]} for f in raw_fixtures]
+        b += gen_fixture_table(f'{team["name"]} Fixtures', fixtures)
 
-    # South Leics
+    # --- South Leics ---
     b += '<div class="league-header">South Leicestershire Triples League</div>\n'
     if south_leics["fixture_divs"]:
-        for div_name, fixtures in south_leics["fixture_divs"].items():
-            b += f'<h3>{div_name}</h3>\n'
-            b += '<table><tr><th>Date</th><th>Home</th><th>V</th><th>Away</th></tr>\n'
-            current_date = ""
-            for f in fixtures:
-                if f["date"] and f["date"] != current_date:
-                    current_date = f["date"]
-                    b += f'<tr><td colspan="4" class="fixture-date">{current_date}</td></tr>\n'
+        for div_name, raw_fixtures in south_leics["fixture_divs"].items():
+            # Determine Blaby team name from div
+            team_map = {"Div 1": "Blaby A", "Div 2": "Blaby B", "Div 3": "Blaby C"}
+            team_name = team_map.get(div_name, "Blaby")
+
+            fixtures = []
+            for f in raw_fixtures:
                 cells = f["cells"]
                 if len(cells) >= 2:
                     home = cells[0]
                     away = cells[-1] if len(cells) == 2 else cells[1]
-                    # If there are scores in between, show them
                     if len(cells) == 4:
                         home = cells[0]
                         away = cells[2]
-                    b += f'<tr class="blaby-match"><td></td><td>{home}</td><td>V</td><td>{away}</td></tr>\n'
-            b += '</table>\n'
+                    fixtures.append({"date": f["date"], "home": home, "away": away, "score": None})
+
+            b += f'<h3>{div_name}</h3>\n'
+            b += gen_fixture_table(f'{team_name} Fixtures — {div_name}', fixtures, show_date_rows=True)
     else:
         b += '<p class="no-data">No Blaby fixtures found yet. Season starts 28th April 2026.</p>\n'
 
-    # Leicester - Division 1 only
+    # --- Leicester Division 1 ---
     b += '<div class="league-header">Leicester Bowls League — Division 1</div>\n'
     leic_div1 = leicester_data.get("div1")
-    if leic_div1 and leic_div1["rows"]:
-        # Fixtures = rows without scores
-        fixture_rows = [r for r in leic_div1["rows"] if not any(any(c.isdigit() for c in cell) for cell in r["cells"][1:])]
-        if fixture_rows:
-            b += '<table>\n'
-            if fixture_rows[0].get("header"):
-                b += '<tr><th>' + '</th><th>'.join(h for h in fixture_rows[0]["header"][:6] if h) + '</th></tr>\n'
-            for r in fixture_rows:
-                b += f'<tr class="blaby-match"><td>' + '</td><td>'.join(c for c in r["cells"][:6] if c) + '</td></tr>\n'
-            b += '</table>\n'
+    leic_fixtures = parse_leicester_fixtures_structured(leic_div1)
+    if leic_fixtures:
+        upcoming = [f for f in leic_fixtures if not f.get("score")]
+        if upcoming:
+            b += gen_fixture_table('Blaby Fixtures — Division 1', upcoming)
         else:
-            # Show all Blaby rows
-            b += '<table>\n'
-            for r in leic_div1["rows"]:
-                b += f'<tr class="blaby-match"><td>' + '</td><td>'.join(c for c in r["cells"][:6] if c) + '</td></tr>\n'
-            b += '</table>\n'
+            b += '<p class="no-data">No upcoming Blaby Division 1 fixtures.</p>\n'
+    elif leic_div1 and leic_div1["rows"]:
+        # Fallback: show raw Blaby rows in best format we can
+        b += '<div class="team-header">Blaby Fixtures — Division 1</div>\n'
+        b += '<table>\n<tr><th>Date</th><th>Home</th><th></th><th>Away</th></tr>\n'
+
+        # Try to pair up raw rows as home/away
+        raw_cells = []
+        date_str = ""
+        for r in leic_div1["rows"]:
+            if r.get("header"):
+                date_str = " ".join(h for h in r["header"][:2] if h)
+            for c in r["cells"]:
+                val = c.strip()
+                if val:
+                    # Split on newlines (cells might contain "Team1\nTeam2")
+                    if '\n' in val:
+                        raw_cells.extend([p.strip() for p in val.split('\n') if p.strip()])
+                    else:
+                        raw_cells.append(val)
+
+        # Pair consecutive team names
+        for j in range(0, len(raw_cells) - 1, 2):
+            home = raw_cells[j]
+            away = raw_cells[j + 1]
+            b += f'<tr class="blaby-match"><td>{date_str}</td><td>{home}</td><td>V</td><td>{away}</td></tr>\n'
+            date_str = ""  # Only show date on first row
+
+        b += '</table>\n'
     else:
         b += '<p class="no-data">No Blaby Division 1 fixtures found yet.</p>\n'
 
     return html_wrap("Blaby Bowls - Fixtures 2026", b)
 
 
+def gen_result_table(team_label, results_list):
+    """Generate a consistent result table for any league.
+    results_list: list of dicts with keys: date, home, away, score (or home_score/away_score)
+    """
+    if not results_list:
+        return f'<p class="no-data">No {team_label} results yet.</p>\n'
+
+    html = f'<div class="team-header">{team_label}</div>\n'
+    html += '<table>\n'
+    html += '<tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th></tr>\n'
+    for r in results_list:
+        score = r.get("score", "")
+        html += f'<tr class="blaby-match"><td>{r["date"]}</td><td>{r["home"]}</td><td class="score">{score}</td><td>{r["away"]}</td></tr>\n'
+    html += '</table>\n'
+    return html
+
+
 def gen_results(hinckley_data, south_leics, leicester_data):
     b = "<h2>Blaby Bowls - Results &amp; Scores 2026</h2>\n"
 
-    # Hinckley
+    # --- Hinckley ---
     b += '<div class="league-header">Hinckley &amp; District Triples League</div>\n'
     current_div = None
     for team in HINCKLEY_TEAMS:
@@ -575,46 +806,33 @@ def gen_results(hinckley_data, south_leics, leicester_data):
             current_div = team["div_name"]
             b += f'<h3>{current_div}</h3>\n'
 
-        results_list = [f for f in hinckley_data.get(team["name"], []) if f["score"] is not None]
-        if results_list:
-            b += f'<table><tr><th colspan="4">{team["name"]} Results</th></tr>\n'
-            b += '<tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th></tr>\n'
-            for f in results_list:
-                b += f'<tr class="blaby-match"><td>{f["date"]}</td><td>{f["home"]}</td><td class="score">{f["score"]}</td><td>{f["away"]}</td></tr>\n'
-            b += '</table>\n'
-        else:
-            b += f'<p class="no-data">No {team["name"]} results yet.</p>\n'
+        raw_results = [f for f in hinckley_data.get(team["name"], []) if f["score"] is not None]
+        results_list = [{"date": f["date"], "home": f["home"], "away": f["away"], "score": f["score"]} for f in raw_results]
+        b += gen_result_table(f'{team["name"]} Results', results_list)
 
-    # South Leics - 2026 results only
+    # --- South Leics (2026 only) ---
     b += '<div class="league-header">South Leicestershire Triples League</div>\n'
     results_2026 = [r for r in south_leics["results"] if "2026" in r.get("date", "")]
     if results_2026:
-        b += '<table><tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th><th>Score</th></tr>\n'
+        formatted = []
         for r in results_2026:
             cells = r["cells"]
             date = r["date"]
             if len(cells) >= 4:
-                b += f'<tr class="blaby-match"><td>{date}</td><td>{cells[0]}</td><td class="score">{cells[1]}</td><td>{cells[2]}</td><td class="score">{cells[3]}</td></tr>\n'
+                formatted.append({"date": date, "home": cells[0], "away": cells[2], "score": f'{cells[1]} - {cells[3]}'})
             elif len(cells) >= 2:
-                b += f'<tr class="blaby-match"><td>{date}</td><td colspan="4">{" | ".join(cells)}</td></tr>\n'
-        b += '</table>\n'
+                formatted.append({"date": date, "home": cells[0], "away": cells[-1], "score": ""})
+        b += gen_result_table('South Leics Results', formatted)
     else:
         b += '<p class="no-data">No South Leics results yet. Season starts 28th April 2026.</p>\n'
 
-    # Leicester - Division 1 only
+    # --- Leicester Division 1 ---
     b += '<div class="league-header">Leicester Bowls League — Division 1</div>\n'
     leic_div1 = leicester_data.get("div1")
-    if leic_div1 and leic_div1["rows"]:
-        result_rows = [r for r in leic_div1["rows"] if any(any(c.isdigit() for c in cell) for cell in r["cells"][1:])]
-        if result_rows:
-            b += '<table>\n'
-            if result_rows[0].get("header"):
-                b += '<tr><th>' + '</th><th>'.join(h for h in result_rows[0]["header"][:6] if h) + '</th></tr>\n'
-            for r in result_rows:
-                b += f'<tr class="blaby-match"><td>' + '</td><td>'.join(c for c in r["cells"][:6] if c) + '</td></tr>\n'
-            b += '</table>\n'
-        else:
-            b += '<p class="no-data">No Division 1 results yet.</p>\n'
+    leic_fixtures = parse_leicester_fixtures_structured(leic_div1)
+    if leic_fixtures:
+        played = [f for f in leic_fixtures if f.get("score")]
+        b += gen_result_table('Blaby Results — Division 1', played)
     else:
         b += '<p class="no-data">No Division 1 results available yet.</p>\n'
 
