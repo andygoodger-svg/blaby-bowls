@@ -294,10 +294,10 @@ def parse_leicester_docx(url, label):
         print(f"    DEBUG: {len(all_paras)} paragraphs")
         for t_idx, t_data in enumerate(tables_raw):
             print(f"    DEBUG Table {t_idx}: header={t_data['header'][:6]}, {len(t_data['rows'])} rows")
-            for r_idx, row in enumerate(t_data['rows'][:3]):  # Show first 3 rows
+            for r_idx, row in enumerate(t_data['rows'][:12]):  # Show first 12 rows
                 print(f"      Row {r_idx}: {row[:6]}")
-            if len(t_data['rows']) > 3:
-                print(f"      ... ({len(t_data['rows'])-3} more rows)")
+            if len(t_data['rows']) > 12:
+                print(f"      ... ({len(t_data['rows'])-12} more rows)")
         # Show first few paragraphs for context
         for p in all_paras[:5]:
             print(f"    DEBUG Para: '{p[:80]}'")
@@ -321,140 +321,101 @@ def parse_leicester_docx(url, label):
 def parse_leicester_fixtures_structured(div1_data):
     """Parse Leicester Div 1 docx into structured fixture list with dates.
 
-    The docx typically has a table layout where:
-    - Header row contains dates (e.g., "29th April", "6th May", etc.)
-    - Each column under a date lists fixture pairs (home team, then away team)
-    - OR the table has columns: Date | Home | Away | Score
+    Known docx format (from debug output):
+    - Single table, 6+ columns, ~82 rows
+    - Column 0: Date parts spread across rows (e.g. row N="29th", row N+1="April")
+    - Column 2: Team names — consecutive pairs are Home/Away
+    - Column 3: Shots/scores (when matches have been played)
+    - Column 5: W/L indicator
+    - Month name rows (like "April") also appear in column 0
 
-    We try multiple strategies to extract the data.
+    We scan through all rows, tracking the current date from column 0,
+    collecting team names from column 2, and pairing them as fixtures.
     """
     if not div1_data:
         return []
 
     tables_raw = div1_data.get("tables_raw", [])
-    all_paras = div1_data.get("all_paras", [])
     fixtures = []
 
-    # Strategy 1: Table with Date/Home/Away columns
+    MONTHS = ["january", "february", "march", "april", "may", "june",
+              "july", "august", "september", "october", "november", "december"]
+    date_day_pattern = re.compile(r'^(\d{1,2})(st|nd|rd|th)$', re.IGNORECASE)
+
     for t_data in tables_raw:
-        header = t_data["header"]
-        header_lower = [h.lower() for h in header]
-
-        # Check if header has recognisable column names
-        has_date_col = any("date" in h for h in header_lower)
-        has_home_col = any("home" in h for h in header_lower)
-        has_away_col = any("away" in h for h in header_lower)
-
-        if has_home_col or has_away_col:
-            # Structured table with named columns
-            for row in t_data["rows"][1:]:  # Skip header
-                if not any(c.strip() for c in row):
-                    continue
-                row_text = " ".join(row).lower()
-                if "blaby" not in row_text:
-                    continue
-
-                date_val = row[0] if len(row) > 0 else ""
-                home_val = row[1] if len(row) > 1 else ""
-                away_val = row[2] if len(row) > 2 else ""
-                score_val = ""
-                if len(row) > 3 and any(c.isdigit() for c in row[3]):
-                    score_val = row[3]
-
-                fixtures.append({
-                    "date": date_val.strip(),
-                    "home": home_val.strip(),
-                    "away": away_val.strip(),
-                    "score": score_val.strip() if score_val.strip() else None
-                })
-            if fixtures:
-                return fixtures
-
-    # Strategy 2: Table where header row = dates, columns = fixture pairs
-    # Each column has pairs of teams (home row then away row)
-    for t_data in tables_raw:
-        header = t_data["header"]
         rows = t_data["rows"]
+        current_date_day = ""  # e.g. "29th"
+        current_date_full = ""  # e.g. "29th April"
+        team_buffer = []  # Collect team names to pair up
 
-        # Check if header cells look like dates
-        date_pattern = re.compile(r'\d{1,2}(st|nd|rd|th)', re.IGNORECASE)
-        date_cols = [(i, h) for i, h in enumerate(header) if date_pattern.search(h)]
+        for row in rows:
+            col0 = row[0].strip() if len(row) > 0 else ""
+            col2 = row[2].strip() if len(row) > 2 else ""
+            col3 = row[3].strip() if len(row) > 3 else ""
 
-        if date_cols and len(rows) > 1:
-            # Column-based fixture layout
-            for col_idx, date_str in date_cols:
-                # Get all values in this column (skip header)
-                col_vals = []
-                for row in rows[1:]:
-                    if col_idx < len(row):
-                        val = row[col_idx].strip()
-                        # Handle cells with newlines (merged fixture pairs)
-                        if '\n' in val:
-                            parts = [p.strip() for p in val.split('\n') if p.strip()]
-                            col_vals.extend(parts)
-                        elif val:
-                            col_vals.append(val)
+            # Check column 0 for date parts
+            if date_day_pattern.match(col0):
+                # This is a date day like "29th" — flush any pending pairs
+                if team_buffer:
+                    _flush_team_pairs(team_buffer, current_date_full, fixtures, col3_list=[])
+                    team_buffer = []
+                current_date_day = col0
+                current_date_full = col0  # Will be completed by month row
+                continue
 
-                # Pair up consecutive entries as Home/Away
-                for j in range(0, len(col_vals) - 1, 2):
-                    home = col_vals[j]
-                    away = col_vals[j + 1]
-                    if "blaby" in home.lower() or "blaby" in away.lower():
-                        fixtures.append({
-                            "date": date_str.strip(),
-                            "home": home,
-                            "away": away,
-                            "score": None
-                        })
-            if fixtures:
-                return fixtures
+            if col0.lower() in MONTHS:
+                # Month row (e.g. "April") — completes the date
+                current_date_full = f"{current_date_day} {col0}" if current_date_day else col0
+                continue
 
-    # Strategy 3: Single-column table with team pairs
-    # Try pairing consecutive Blaby-related rows
-    for t_data in tables_raw:
-        header = t_data["header"]
-        rows = t_data["rows"]
-        date_str = header[0] if header else ""
+            # Skip header/label rows (like "Shots", "W", etc.)
+            skip_words = ["shots", "w", "l", "d", "for", "agst", "home", "away", "pts", "points"]
+            if col0.lower() in skip_words or col2.lower() in skip_words:
+                continue
 
-        # Get all non-empty, non-header row values
-        team_names = []
-        for row in rows[1:]:
-            for cell in row:
-                val = cell.strip()
-                if val and val != header[0] if header else True:
-                    # Handle cells with newlines
-                    if '\n' in val:
-                        parts = [p.strip() for p in val.split('\n') if p.strip()]
-                        team_names.extend(parts)
-                    else:
-                        team_names.append(val)
+            # Column 2: team name
+            if col2 and col2.lower() not in skip_words:
+                # This is a team name — add to buffer with score info
+                score_info = col3 if col3 and any(c.isdigit() for c in col3) else ""
+                team_buffer.append({"name": col2, "score": score_info, "date": current_date_full})
 
-        # Pair consecutive teams
-        for j in range(0, len(team_names) - 1, 2):
-            home = team_names[j]
-            away = team_names[j + 1]
-            if "blaby" in home.lower() or "blaby" in away.lower():
-                fixtures.append({
-                    "date": date_str,
-                    "home": home,
-                    "away": away,
-                    "score": None
-                })
+        # Flush remaining pairs
+        if team_buffer:
+            _flush_team_pairs(team_buffer, current_date_full, fixtures, col3_list=[])
 
-    # Strategy 4: Check paragraphs for fixture info (e.g., "Blaby v Countesthorpe")
-    if not fixtures:
-        for para in all_paras:
-            if "blaby" in para.lower() and (" v " in para.lower() or " vs " in para.lower()):
-                parts = re.split(r'\s+[vV][sS]?\s+', para)
-                if len(parts) == 2:
-                    fixtures.append({
-                        "date": "",
-                        "home": parts[0].strip(),
-                        "away": parts[1].strip(),
-                        "score": None
-                    })
+    print(f"    Leicester parsed: {len(fixtures)} Blaby fixtures found")
+    for f in fixtures:
+        status = f"({f['score']})" if f.get('score') else "(upcoming)"
+        print(f"      {f['date']}: {f['home']} v {f['away']} {status}")
 
     return fixtures
+
+
+def _flush_team_pairs(team_buffer, default_date, fixtures, col3_list):
+    """Pair up consecutive teams from the buffer as Home/Away fixtures."""
+    for j in range(0, len(team_buffer) - 1, 2):
+        home_entry = team_buffer[j]
+        away_entry = team_buffer[j + 1]
+        home = home_entry["name"]
+        away = away_entry["name"]
+        date = home_entry.get("date", default_date)
+
+        # Determine score (combine home and away shots if both present)
+        score = None
+        h_score = home_entry.get("score", "")
+        a_score = away_entry.get("score", "")
+        if h_score and a_score:
+            score = f"{h_score} - {a_score}"
+        elif h_score or a_score:
+            score = h_score or a_score
+
+        if "blaby" in home.lower() or "blaby" in away.lower():
+            fixtures.append({
+                "date": date,
+                "home": home,
+                "away": away,
+                "score": score
+            })
 
 
 def parse_leicester_table_div1(tables_data):
