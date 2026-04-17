@@ -108,6 +108,7 @@ def fetch(url):
 
 def fetch_google_sheet_csv(sheet_id, label="sheet"):
     """Fetch a Google Sheet as CSV. Returns list of rows (each row is a list of strings)."""
+    # Try CSV export first, then fall back to htmlembed + parsing
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0"
     print(f"  Fetching Google Sheet CSV: {label}")
     try:
@@ -118,10 +119,32 @@ def fetch_google_sheet_csv(sheet_id, label="sheet"):
             print(f"    Got {len(rows)} rows")
             return rows
         else:
-            print(f"    [WARN] Status {r.status_code}")
-            return []
+            print(f"    [WARN] CSV export returned {r.status_code}, trying htmlembed...")
+            return fetch_google_sheet_html(sheet_id, label)
     except Exception as e:
         print(f"    [ERROR] {e}")
+        return []
+
+
+def fetch_google_sheet_html(sheet_id, label="sheet"):
+    """Fallback: fetch a Google Sheet via htmlembed and parse the HTML table."""
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/htmlembed"
+    try:
+        r = requests.get(url, timeout=30)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, "html.parser")
+            rows = []
+            for table in soup.find_all("table"):
+                for tr in table.find_all("tr"):
+                    cells = [td.get_text(strip=True) for td in tr.find_all(["td", "th"])]
+                    rows.append(cells)
+            print(f"    Got {len(rows)} rows via htmlembed")
+            return rows
+        else:
+            print(f"    [WARN] htmlembed also failed: {r.status_code}")
+            return []
+    except Exception as e:
+        print(f"    [ERROR] htmlembed: {e}")
         return []
 
 
