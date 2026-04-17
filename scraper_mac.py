@@ -219,7 +219,7 @@ def scrape_hinckley_team_fixtures(team):
 
 def scrape_hinckley_table(div_id):
     """Scrape league table for a division."""
-    url = f"{HINCKLEY_BASE}/tables.php?res=1&d=0&yearid=2026&web=hinckley&leagueid={div_id}"
+    url = f"{HINCKLEY_BASE}/tables.php?f=0&d={div_id}&yearid=2026&web=hinckley&m=0&leagueid=1"
     print(f"  Hinckley Div {div_id} table: {url}")
     soup = fetch(url)
     if not soup:
@@ -413,8 +413,10 @@ def scrape_south_leics():
                     })
 
     # --- TABLES ---
-    print("  Fetching tables sheet...")
-    rows = fetch_google_sheet_csv(SOUTH_LEICS_TABLES_SHEET, "League Tables")
+    # Skip for now - current sheet is 2025 Partridge Cup data
+    # Will re-enable once 2026 league tables are published
+    print("  Tables: skipping (2026 tables not yet published, using placeholders)")
+    rows = None  # Was: fetch_google_sheet_csv(SOUTH_LEICS_TABLES_SHEET, "League Tables")
     if rows:
         # Parse the table data - find groups/divisions containing Blaby
         current_group = ""
@@ -583,11 +585,12 @@ def gen_results(hinckley_data, south_leics, leicester_data):
         else:
             b += f'<p class="no-data">No {team["name"]} results yet.</p>\n'
 
-    # South Leics
+    # South Leics - 2026 results only
     b += '<div class="league-header">South Leicestershire Triples League</div>\n'
-    if south_leics["results"]:
+    results_2026 = [r for r in south_leics["results"] if "2026" in r.get("date", "")]
+    if results_2026:
         b += '<table><tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th><th>Score</th></tr>\n'
-        for r in south_leics["results"]:
+        for r in results_2026:
             cells = r["cells"]
             date = r["date"]
             if len(cells) >= 4:
@@ -701,12 +704,12 @@ def main():
     # Leicester table - Division 1 only
     leic_table_html = parse_leicester_table_div1(leicester_data.get("tables"))
 
-    # South Leics table
-    if south_leics["tables"]:
-        south_leics_table = south_leics["tables"]
-    else:
-        south_leics_table = '<p class="no-data">League tables will appear once the 2026 season starts (28th April). ' \
-            'You can also view them directly at <a href="https://sites.google.com/view/southleicestershiretriples/tables" target="_blank">the South Leics website</a>.</p>'
+    # South Leics table — placeholders for 2026 (tables not yet published)
+    south_leics_table = '<h3>League Tables 2026</h3>\n'
+    south_leics_table += '<p class="no-data">League tables will appear here once the 2026 season is underway (first matches 28th April). '
+    south_leics_table += 'Check back after the first round of games.</p>\n'
+    south_leics_table += '<h3>Partridge Cup 2026</h3>\n'
+    south_leics_table += '<p class="no-data">Partridge Cup tables will appear here once the 2026 competition starts.</p>\n'
 
     files = {
         "index.html": gen_index(),
