@@ -91,23 +91,9 @@ tr.blaby-match{background:#e8f5e9}
 .team-header{background:#1a5c2e;color:#fff;padding:6px 10px;font-weight:700;font-size:.9em;border-radius:3px 3px 0 0;margin-top:12px}
 </style>"""
 
-# Auto-resize script for iframes — sends actual content height to parent
-IFRAME_RESIZE_JS = """<script>
-(function(){
-  function sendHeight(){
-    var h = document.documentElement.scrollHeight || document.body.scrollHeight;
-    window.parent.postMessage({type:'iframeHeight', height: h + 20}, '*');
-  }
-  window.addEventListener('load', sendHeight);
-  window.addEventListener('resize', sendHeight);
-  setTimeout(sendHeight, 500);
-})();
-</script>"""
-
-
 def html_wrap(title, body):
     now = datetime.now().strftime("%d %b %Y %H:%M")
-    return f'<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>{title}</title>{CSS}</head><body>{body}<p class="updated">Last updated: {now}</p>{IFRAME_RESIZE_JS}</body></html>'
+    return f'<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>{title}</title>{CSS}</head><body>{body}<p class="updated">Last updated: {now}</p></body></html>'
 
 
 def fetch(url):
