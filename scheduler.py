@@ -14,8 +14,8 @@ PYTHON     = '/Volumes/SSD_1/blaby-venv/bin/python3'
 SCRAPER    = '/Volumes/SSD_1/blaby-bowls/scraper_mac.py'
 LOG        = '/Volumes/SSD_1/blaby-bowls/scraper.log'
 SCHED_LOG  = '/Volumes/SSD_1/blaby-bowls/scheduler.log'
-RUN_HOUR   = 11
-RUN_MINUTE = 27
+RUN_HOUR   = 7
+RUN_MINUTE = 0
 
 def log(msg):
     ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
