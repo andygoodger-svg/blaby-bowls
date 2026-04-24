@@ -8,11 +8,12 @@ Blaby Bowls Scraper v3
 """
 import requests
 from bs4 import BeautifulSoup
-import os, subprocess, sys, re, csv, io
+import os, subprocess, sys, re, csv, io, json
 from datetime import datetime
 
 OUTPUT_DIR = "/Users/andrewgoodger/blaby-bowls"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) BlabyScraper/3.0"}
+LEICESTER_CACHE_FILE = os.path.join(OUTPUT_DIR, ".leicester_cache.json")
 
 
 def _load_dotenv(path):
@@ -130,24 +131,53 @@ def fetch(url):
         return None
 
 
-def fetch_google_sheet_csv(sheet_id, label="sheet"):
-    """Fetch a Google Sheet as CSV. Returns list of rows (each row is a list of strings)."""
-    # Try CSV export first, then fall back to htmlembed + parsing
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid=0"
-    print(f"  Fetching Google Sheet CSV: {label}")
+def fetch_google_sheet_csv(sheet_id, label="sheet", gid=0):
+    """Fetch a Google Sheet tab as CSV. Returns list of rows (each row is a list of strings)."""
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     try:
         r = requests.get(url, timeout=30)
         if r.status_code == 200:
             reader = csv.reader(io.StringIO(r.text))
             rows = [row for row in reader]
-            print(f"    Got {len(rows)} rows")
             return rows
         else:
-            print(f"    [WARN] CSV export returned {r.status_code}, trying htmlembed...")
-            return fetch_google_sheet_html(sheet_id, label)
+            if gid == 0:
+                # Only fall back to htmlembed for the primary tab
+                print(f"    [WARN] CSV export returned {r.status_code} for {label}, trying htmlembed...")
+                return fetch_google_sheet_html(sheet_id, label)
+            return []
     except Exception as e:
-        print(f"    [ERROR] {e}")
+        print(f"    [ERROR] {label} gid={gid}: {e}")
         return []
+
+
+def fetch_south_leics_fixture_sheet(sheet_id, label):
+    """Fetch all tabs of a South Leics fixture sheet and merge rows.
+    Tries gid=0 (first half of season) and gid=1 (second half if present)."""
+    print(f"  Fetching Google Sheet CSV: {label}")
+    all_rows = []
+    seen_rows = set()
+
+    for gid in [0, 1]:
+        rows = fetch_google_sheet_csv(sheet_id, label, gid=gid)
+        if not rows:
+            break  # gid=1 missing or empty — stop trying
+
+        new_rows = 0
+        for row in rows:
+            key = tuple(row)
+            if key not in seen_rows:
+                seen_rows.add(key)
+                all_rows.append(row)
+                new_rows += 1
+
+        if gid == 0:
+            print(f"    Tab 1 (gid=0): {len(rows)} rows")
+        elif new_rows > 2:
+            print(f"    Tab 2 (gid=1): {new_rows} new rows")
+
+    print(f"    Total: {len(all_rows)} rows")
+    return all_rows
 
 
 def fetch_google_sheet_html(sheet_id, label="sheet"):
@@ -190,19 +220,11 @@ def fetch_google_sheet_html(sheet_id, label="sheet"):
 # =========================================================================
 # HINCKLEY - Per-team fixture pages (clean, no duplicates)
 # =========================================================================
-def scrape_hinckley_team_fixtures(team):
-    """Scrape a single team's fixture page. Returns list of dicts."""
-    url = f"{HINCKLEY_BASE}/teamfixtures.php?ly=0&f=0&yearid=2026&d={team['div']}&t={team['team_id']}&web=hinckley&m=0&leagueid=1"
-    print(f"  {team['name']} fixtures: {url}")
-    soup = fetch(url)
-    if not soup:
-        return []
-
+def _parse_hinckley_fixture_table(soup, team):
+    """Extract fixture rows from a parsed Hinckley fixture page."""
     fixtures = []
-    tables = soup.find_all("table")
-    for table in tables:
-        rows = table.find_all("tr")
-        for row in rows:
+    for table in soup.find_all("table"):
+        for row in table.find_all("tr"):
             cells = [c.get_text(strip=True) for c in row.find_all("td")]
             if len(cells) >= 3:
                 date = cells[0]
@@ -237,6 +259,26 @@ def scrape_hinckley_team_fixtures(team):
                             "score": None,
                             "team": team["name"]
                         })
+    return fixtures
+
+
+def scrape_hinckley_team_fixtures(team):
+    """Scrape a single team's fixture page. Fetches both f=0 (first half) and
+    f=1 (second half) and merges, deduplicating by date+opponent."""
+    fixtures = []
+    seen = set()  # (date, opponent) to avoid duplicates across halves
+
+    for f_val in [0, 1]:
+        url = f"{HINCKLEY_BASE}/teamfixtures.php?ly=0&f={f_val}&yearid=2026&d={team['div']}&t={team['team_id']}&web=hinckley&m=0&leagueid=1"
+        print(f"  {team['name']} fixtures (f={f_val}): {url}")
+        soup = fetch(url)
+        if not soup:
+            continue
+        for fix in _parse_hinckley_fixture_table(soup, team):
+            key = (fix["date"], fix["opponent"])
+            if key not in seen:
+                seen.add(key)
+                fixtures.append(fix)
 
     return fixtures
 
@@ -265,6 +307,29 @@ def scrape_hinckley_table(div_id):
 # =========================================================================
 # LEICESTER - Division 1 only
 # =========================================================================
+def save_leicester_cache(data):
+    """Persist the last successfully parsed Leicester data to disk."""
+    try:
+        with open(LEICESTER_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"  [WARN] Could not save Leicester cache: {e}")
+
+
+def load_leicester_cache():
+    """Load the last successfully parsed Leicester data from disk."""
+    try:
+        with open(LEICESTER_CACHE_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        print("  [INFO] Using cached Leicester data from previous run.")
+        return data
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        print(f"  [WARN] Could not load Leicester cache: {e}")
+        return {}
+
+
 def parse_leicester_docx(url, label):
     """Download a .docx and extract data. Returns structured fixture/result data."""
     try:
@@ -299,19 +364,7 @@ def parse_leicester_docx(url, label):
         all_paras = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
         blaby_paras = [p for p in all_paras if "blaby" in p.lower()]
 
-        # DEBUG: Print raw table structure so we can understand the format
-        print(f"    DEBUG: {len(doc.tables)} table(s), {len(all_rows)} total rows, {len(blaby_rows)} Blaby rows")
-        print(f"    DEBUG: {len(all_paras)} paragraphs")
-        for t_idx, t_data in enumerate(tables_raw):
-            ncols = len(t_data['header']) if t_data['header'] else (len(t_data['rows'][0]) if t_data['rows'] else 0)
-            print(f"    DEBUG Table {t_idx}: {ncols} cols, header={t_data['header']}, {len(t_data['rows'])} rows")
-            for r_idx, row in enumerate(t_data['rows'][:16]):  # Show first 16 rows, ALL columns
-                print(f"      Row {r_idx}: {row}")
-            if len(t_data['rows']) > 16:
-                print(f"      ... ({len(t_data['rows'])-16} more rows)")
-        # Show first few paragraphs for context
-        for p in all_paras[:5]:
-            print(f"    DEBUG Para: '{p[:80]}'")
+        print(f"    {label}: {len(doc.tables)} table(s), {len(all_rows)} total rows, {len(blaby_rows)} Blaby rows")
 
         os.remove(tmp)
         return {
@@ -539,7 +592,7 @@ def scrape_south_leics():
     # --- FIXTURES: Check all 6 division sheets for Blaby teams ---
     print("  Fetching fixture sheets...")
     for sheet in SOUTH_LEICS_FIXTURES_SHEETS:
-        rows = fetch_google_sheet_csv(sheet["id"], sheet["name"])
+        rows = fetch_south_leics_fixture_sheet(sheet["id"], sheet["name"])
         if not rows:
             continue
 
@@ -610,10 +663,16 @@ def scrape_south_leics():
                     })
 
     # --- TABLES ---
-    # Skip for now - current sheet is 2025 Partridge Cup data
-    # Will re-enable once 2026 league tables are published
-    print("  Tables: skipping (2026 tables not yet published, using placeholders)")
-    rows = None  # Was: fetch_google_sheet_csv(SOUTH_LEICS_TABLES_SHEET, "League Tables")
+    print("  Fetching tables sheet...")
+    rows = fetch_google_sheet_csv(SOUTH_LEICS_TABLES_SHEET, "League Tables")
+    # Only use if it looks like 2026 league table data (not last year's Partridge Cup).
+    # League tables contain "division 1" etc; Partridge Cup data does not.
+    flat_text = " ".join(cell for row in (rows or []) for cell in row).lower()
+    has_divisions = "division 1" in flat_text or "div 1" in flat_text
+    if not rows or not has_divisions:
+        why = "no data returned" if not rows else "no Division headers found (may be Partridge Cup data)"
+        print(f"  Tables: skipping South Leics table ({why}), using placeholder")
+        rows = None
     if rows:
         # Parse the table data - find groups/divisions containing Blaby
         current_group = ""
@@ -779,18 +838,16 @@ def gen_fixtures(hinckley_data, south_leics, leicester_data):
             for c in r["cells"]:
                 val = c.strip()
                 if val:
-                    # Split on newlines (cells might contain "Team1\nTeam2")
                     if '\n' in val:
                         raw_cells.extend([p.strip() for p in val.split('\n') if p.strip()])
                     else:
                         raw_cells.append(val)
 
-        # Pair consecutive team names
         for j in range(0, len(raw_cells) - 1, 2):
             home = raw_cells[j]
             away = raw_cells[j + 1]
             b += f'<tr class="blaby-match"><td>{date_str}</td><td>{home}</td><td>V</td><td>{away}</td></tr>\n'
-            date_str = ""  # Only show date on first row
+            date_str = ""
 
         b += '</table>\n'
     else:
@@ -930,12 +987,25 @@ def main():
     # --- LEICESTER (Division 1 only) ---
     print("\n[3/3] Leicester Bowls League (Division 1 only)...")
     leicester_data = {}
+    leicester_errors = []
     for key, info in LEICESTER_DOCX.items():
         leicester_data[key] = parse_leicester_docx(info["url"], info["name"])
         if leicester_data[key]:
             print(f"    {info['name']}: {len(leicester_data[key]['rows'])} Blaby rows, {len(leicester_data[key]['all_rows'])} total rows")
         else:
-            print(f"    {info['name']}: failed or no data")
+            print(f"    {info['name']}: download failed")
+            leicester_errors.append(info["name"])
+
+    if all(leicester_data.get(k) for k in LEICESTER_DOCX):
+        # All sources succeeded — update the cache
+        save_leicester_cache(leicester_data)
+    elif any(leicester_data.get(k) is None for k in LEICESTER_DOCX):
+        # At least one source failed — fall back to cached data for those keys
+        cached = load_leicester_cache()
+        for key in LEICESTER_DOCX:
+            if leicester_data[key] is None and cached.get(key):
+                leicester_data[key] = cached[key]
+                print(f"    Using cached data for: {LEICESTER_DOCX[key]['name']}")
 
     # --- GENERATE HTML ---
     print("\nGenerating HTML files...")
@@ -943,12 +1013,13 @@ def main():
     # Leicester table - Division 1 only
     leic_table_html = parse_leicester_table_div1(leicester_data.get("tables"))
 
-    # South Leics table — placeholders for 2026 (tables not yet published)
-    south_leics_table = '<h3>League Tables 2026</h3>\n'
-    south_leics_table += '<p class="no-data">League tables will appear here once the 2026 season is underway (first matches 28th April). '
-    south_leics_table += 'Check back after the first round of games.</p>\n'
-    south_leics_table += '<h3>Partridge Cup 2026</h3>\n'
-    south_leics_table += '<p class="no-data">Partridge Cup tables will appear here once the 2026 competition starts.</p>\n'
+    # South Leics table — use live data if available, otherwise placeholder
+    if south_leics.get("tables"):
+        south_leics_table = south_leics["tables"]
+    else:
+        south_leics_table = '<h3>League Tables 2026</h3>\n'
+        south_leics_table += '<p class="no-data">League tables will appear here once the 2026 season is underway. '
+        south_leics_table += 'Check back after the first round of games.</p>\n'
 
     files = {
         "index.html": gen_index(),
@@ -975,11 +1046,15 @@ def main():
     h_total = sum(len(hinckley_data.get(t["name"], [])) for t in HINCKLEY_TEAMS)
     l_total = len(leicester_data.get("div1", {}).get("rows", []) if leicester_data.get("div1") else [])
 
+    leic_status = f"{l_total} Blaby rows"
+    if leicester_errors:
+        leic_status += f" ⚠️ (download failed, using cached data)"
+
     if pushed:
         msg = (
             f"<b>Blaby Bowls Updated</b> - {now}\n\n"
             f"Hinckley: {h_total} fixtures\n"
-            f"Leicester Div 1: {l_total} Blaby rows\n"
+            f"Leicester Div 1: {leic_status}\n"
             f"South Leics: {sl_fix} fixtures, {len(south_leics['results'])} results\n\n"
             f"<a href='https://andygoodger-svg.github.io/blaby-bowls/'>View site</a>"
         )
