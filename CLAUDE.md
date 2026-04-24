@@ -62,6 +62,30 @@ rm ~/Library/LaunchAgents/com.blaby.scraper.plist
 
 Every successful `scraper_mac.py` run ends with `git add -A && git commit -m "Auto-update: <timestamp>" && git push`. The GitHub repo has Pages enabled serving from the repo root, so the push is the deploy. If the push fails, the function logs a warning and returns; there's no retry.
 
+## Diagnostics
+
+If the scraper stops working, run these in order:
+
+```bash
+# 1. Check last exit code and run count
+launchctl print gui/$(id -u)/com.blaby.scraper | grep -E "state|exit|runs"
+
+# 2. Check what the log says (launchd truncates on each run, so this is the last run only)
+cat ~/blaby-bowls/scraper.log
+
+# 3. Run directly to rule out launchd environment issues
+/Users/andrewgoodger/blaby-bowls/venv/bin/python3 /Users/andrewgoodger/blaby-bowls/scraper_mac.py
+
+# 4. Check system log for sandbox/permission errors (most useful for exit code 78)
+/usr/bin/log show --predicate 'composedMessage CONTAINS "blaby"' --last 5m
+```
+
+**Exit code 78 (EX_CONFIG)** — launchd's `xpcproxy` was blocked by macOS Sandbox. Usually means a path in the plist points to an external/removable volume. All paths must be on the internal drive.
+
+**Exit code 1 / git push fails** — GitHub credentials expired. Run `gh auth login -h github.com` and sign in as `andygoodger-svg`.
+
+**Venv broken** — recreate it: `python3 -m venv ~/blaby-bowls/venv && ~/blaby-bowls/venv/bin/pip install beautifulsoup4 requests python-docx lxml`
+
 ## Conventions & gotchas
 
 - **Paths are absolute** everywhere. `OUTPUT_DIR = "/Users/andrewgoodger/blaby-bowls"` is hardcoded in `scraper_mac.py`. Don't make it relative — launchd runs with an unpredictable `cwd`.
