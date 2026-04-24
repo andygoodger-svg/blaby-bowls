@@ -11,16 +11,40 @@ from bs4 import BeautifulSoup
 import os, subprocess, sys, re, csv, io
 from datetime import datetime
 
-OUTPUT_DIR = "/Volumes/SSD_1/blaby-bowls"
+OUTPUT_DIR = "/Users/andrewgoodger/blaby-bowls"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) BlabyScraper/3.0"}
 
-# Telegram notification
-TELEGRAM_BOT_TOKEN = "8732764989:AAH4rly4qwF3mZt-DEVzn6_wVlzZbDcoIA4"
-TELEGRAM_CHAT_ID = "8391419897"
+
+def _load_dotenv(path):
+    """Tiny .env loader: KEY=VALUE per line, # comments, optional quotes.
+    Only sets vars that aren't already in the environment."""
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                os.environ.setdefault(key, val)
+    except FileNotFoundError:
+        pass
+
+
+_load_dotenv(os.path.join(OUTPUT_DIR, ".env"))
+
+# Telegram notification — configure via environment variables or .env file.
+# See .env.example for the expected keys.
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 
 def send_telegram(message):
     """Send a notification to Telegram."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("  [INFO] Telegram not configured (set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env) - skipping.")
+        return
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         r = requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}, timeout=10)
