@@ -3,11 +3,11 @@
 set +e
 
 echo "=== 1. Last 20 lines of scraper.log ==="
-tail -20 /Volumes/SSD_1/blaby-bowls/scraper.log
+tail -20 /Users/andrewgoodger/blaby-bowls/scraper.log
 echo
 
 echo "=== 2. Log file last modified ==="
-stat -f "%Sm  %N" /Volumes/SSD_1/blaby-bowls/scraper.log
+stat -f "%Sm  %N" /Users/andrewgoodger/blaby-bowls/scraper.log
 echo
 
 echo "=== 3. launchd job status ==="
@@ -15,11 +15,11 @@ launchctl print "gui/$(id -u)/com.blaby.scraper" 2>/dev/null | grep -E "state|la
 echo
 
 echo "=== 4. Venv python check ==="
-ls -l /Volumes/SSD_1/blaby-bowls/venv/bin/python3
-/Volumes/SSD_1/blaby-bowls/venv/bin/python3 --version 2>&1
+ls -l /Users/andrewgoodger/blaby-bowls/venv/bin/python3
+/Users/andrewgoodger/blaby-bowls/venv/bin/python3 --version 2>&1
 echo
 
 echo "=== 5. Running scraper directly (this is the real test) ==="
-/Volumes/SSD_1/blaby-bowls/venv/bin/python3 /Volumes/SSD_1/blaby-bowls/scraper_mac.py
+/Users/andrewgoodger/blaby-bowls/venv/bin/python3 /Users/andrewgoodger/blaby-bowls/scraper_mac.py
 echo
 echo "=== Done. Exit code: $? ==="

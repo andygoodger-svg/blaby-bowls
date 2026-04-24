@@ -4,7 +4,7 @@
 # If the Mac is asleep at 07:00, launchd runs it automatically at the next wake.
 set -e
 
-PLIST_SRC="/Volumes/SSD_1/blaby-bowls/com.blaby.scraper.plist"
+PLIST_SRC="/Users/andrewgoodger/blaby-bowls/com.blaby.scraper.plist"
 LA_DIR="$HOME/Library/LaunchAgents"
 PLIST_DST="$LA_DIR/com.blaby.scraper.plist"
 LABEL="com.blaby.scraper"
@@ -14,7 +14,7 @@ echo "Blaby Bowls scheduler setup"
 echo "==========================="
 
 if [ ! -f "$PLIST_SRC" ]; then
-  echo "ERROR: missing $PLIST_SRC — is the SSD mounted?"
+  echo "ERROR: missing $PLIST_SRC"
   exit 1
 fi
 
@@ -40,7 +40,7 @@ echo "Setup complete."
 echo
 echo "To run a manual test right now:"
 echo "    launchctl kickstart -k gui/$UID_NUM/$LABEL"
-echo "    tail -f /Volumes/SSD_1/blaby-bowls/scraper.log"
+echo "    tail -f /Users/andrewgoodger/blaby-bowls/scraper.log"
 echo
 echo "To remove later:"
 echo "    launchctl bootout gui/$UID_NUM/$LABEL"

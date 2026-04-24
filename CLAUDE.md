@@ -27,17 +27,17 @@ GitHub remote: `andygoodger-svg/blaby-bowls`
 
 ```bash
 # Manual scrape + publish (the real thing — will push to GitHub and ping Telegram)
-/Volumes/SSD_1/blaby-bowls/venv/bin/python3 /Volumes/SSD_1/blaby-bowls/scraper_mac.py
+/Users/andrewgoodger/blaby-bowls/venv/bin/python3 /Users/andrewgoodger/blaby-bowls/scraper_mac.py
 
 # Trigger the LaunchAgent-scheduled run immediately (for testing the schedule)
 launchctl kickstart -k gui/$(id -u)/com.blaby.scraper
-tail -f /Volumes/SSD_1/blaby-bowls/scraper.log
+tail -f /Users/andrewgoodger/blaby-bowls/scraper.log
 
 # Inspect launchd state
 launchctl print gui/$(id -u)/com.blaby.scraper
 
 # Re-install / update the LaunchAgent after editing the plist
-/Volumes/SSD_1/blaby-bowls/setup_schedule.sh
+/Users/andrewgoodger/blaby-bowls/setup_schedule.sh
 
 # Remove the LaunchAgent
 launchctl bootout gui/$(id -u)/com.blaby.scraper
@@ -46,7 +46,7 @@ rm ~/Library/LaunchAgents/com.blaby.scraper.plist
 
 ## Secrets
 
-- Telegram bot token and chat ID live in `/Volumes/SSD_1/blaby-bowls/.env`.
+- Telegram bot token and chat ID live in `/Users/andrewgoodger/blaby-bowls/.env`.
 - `.env` is gitignored. Never commit it. Never echo its contents back to the user.
 - `scraper_mac.py` loads `.env` at startup via a tiny inline loader (`_load_dotenv`) — no `python-dotenv` dependency.
 - If `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` is missing, `send_telegram()` logs a warning and skips silently.
@@ -57,7 +57,6 @@ rm ~/Library/LaunchAgents/com.blaby.scraper.plist
 - `StartCalendarInterval` set to `Hour=7 Minute=0`. If the Mac is asleep at 07:00, launchd fires the job at the next wake — this is intentional, the user is usually awake by 7am anyway.
 - `RunAtLoad=false`, so installing/reloading the plist does not trigger a run.
 - No `pmset` wake/sleep schedule is used on this Mac (the user's other Mac used one; this one doesn't).
-- There's a second launchd job `com.andrewgoodger.blaby-bowls` visible in `launchctl list` on the user's Mac — leftover from an earlier setup attempt. Should be cleaned up if it duplicates our work, but confirm with the user first.
 
 ## Deploy flow
 
@@ -65,18 +64,9 @@ Every successful `scraper_mac.py` run ends with `git add -A && git commit -m "Au
 
 ## Conventions & gotchas
 
-- **Paths are absolute** everywhere. `OUTPUT_DIR = "/Volumes/SSD_1/blaby-bowls"` is hardcoded in `scraper_mac.py`. Don't make it relative — launchd runs with an unpredictable `cwd`.
-- **The SSD must be mounted** for anything to work. `/Volumes/SSD_1/` is an external drive. If it's not mounted, launchd will fail the job silently; the logs won't grow.
-- **The `venv/bin/python3` symlink** targets Homebrew Python 3.14 (`/opt/homebrew/opt/python@3.14/...`). If the user updates Homebrew or removes Python 3.14, the symlink breaks and the whole thing stops working. Fix by recreating the venv with whatever Python is installed.
+- **Paths are absolute** everywhere. `OUTPUT_DIR = "/Users/andrewgoodger/blaby-bowls"` is hardcoded in `scraper_mac.py`. Don't make it relative — launchd runs with an unpredictable `cwd`.
+- **Project lives on the internal drive** at `~/blaby-bowls`. Previously on `/Volumes/SSD_1/blaby-bowls` (external SSD), but macOS Sandbox blocked launchd's `xpcproxy` from spawning binaries or opening log files on external volumes (exit code 78 / EX_CONFIG).
+- **The `venv/bin/python3` symlink** targets Homebrew Python 3.14. If the user updates Homebrew or removes Python 3.14, the symlink breaks and the whole thing stops working. Fix by recreating the venv with whatever Python is installed.
+- **GitHub auth** uses `gh` CLI with the `andygoodger-svg` account via osxkeychain. If pushes start failing, run `gh auth login -h github.com` and sign in as `andygoodger-svg`.
 - **Season dates:** Hinckley opens early May; South Leics starts 28 April. Before then, the generated pages show "No data yet" placeholders — that's not a bug.
 - **Rows with "blaby" (case-insensitive)** in league tables get CSS class `blaby-row` applied to highlight them. When adding new leagues, mirror this pattern.
-
-## Known open issue (as of last session)
-
-The LaunchAgent installed cleanly, but when the user ran `launchctl kickstart -k` to trigger a test run, they didn't receive a Telegram ping and the GitHub Pages site didn't update. What they saw in `tail -f` was likely old log content (the default `tail -f` shows the last 10 lines of existing content before following). Next step is to run `/Volumes/SSD_1/blaby-bowls/diagnose.sh` and look at:
-
-1. Whether `scraper.log`'s mtime updates after a kickstart,
-2. Whether `launchctl print` shows a non-zero last exit code,
-3. Whether running `scraper_mac.py` directly (bypassing launchd) succeeds.
-
-Top suspects: broken venv symlink (Homebrew path mismatch), launchd missing Full Disk Access to `/Volumes/SSD_1/`, or Telegram config not being read inside the launchd environment.

@@ -1,2 +1,2 @@
 #!/bin/bash
-/Volumes/SSD_1/blaby-bowls/venv/bin/python3 /Volumes/SSD_1/blaby-bowls/scraper_mac.py >> /Volumes/SSD_1/blaby-bowls/scraper.log 2>&1
+/Users/andrewgoodger/blaby-bowls/venv/bin/python3 /Users/andrewgoodger/blaby-bowls/scraper_mac.py >> /Users/andrewgoodger/blaby-bowls/scraper.log 2>&1
