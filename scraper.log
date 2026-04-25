@@ -1342,3 +1342,102 @@ Pushing to GitHub Pages...
 
 Done! Live at https://andygoodger-svg.github.io/blaby-bowls/
 ============================================================
+============================================================
+Blaby Bowls Scraper v3 - 2026-04-24 22:30
+============================================================
+
+[1/3] Hinckley & District Triples League...
+  Blaby A fixtures (f=0): https://www.bowlsresultstwo.co.uk/results24/teamfixtures.php?ly=0&f=0&yearid=2026&d=1&t=2&web=hinckley&m=0&leagueid=1
+  Blaby A fixtures (f=1): https://www.bowlsresultstwo.co.uk/results24/teamfixtures.php?ly=0&f=1&yearid=2026&d=1&t=2&web=hinckley&m=0&leagueid=1
+    Blaby A: 7 fixtures
+  Blaby B fixtures (f=0): https://www.bowlsresultstwo.co.uk/results24/teamfixtures.php?ly=0&f=0&yearid=2026&d=1&t=6&web=hinckley&m=0&leagueid=1
+  Blaby B fixtures (f=1): https://www.bowlsresultstwo.co.uk/results24/teamfixtures.php?ly=0&f=1&yearid=2026&d=1&t=6&web=hinckley&m=0&leagueid=1
+    Blaby B: 7 fixtures
+  Blaby C fixtures (f=0): https://www.bowlsresultstwo.co.uk/results24/teamfixtures.php?ly=0&f=0&yearid=2026&d=4&t=33&web=hinckley&m=0&leagueid=1
+  Blaby C fixtures (f=1): https://www.bowlsresultstwo.co.uk/results24/teamfixtures.php?ly=0&f=1&yearid=2026&d=4&t=33&web=hinckley&m=0&leagueid=1
+    Blaby C: 7 fixtures
+  Hinckley Div 1 table: https://www.bowlsresultstwo.co.uk/results24/tables.php?f=0&d=1&yearid=2026&web=hinckley&m=0&leagueid=1
+  Hinckley Div 4 table: https://www.bowlsresultstwo.co.uk/results24/tables.php?f=0&d=4&yearid=2026&web=hinckley&m=0&leagueid=1
+
+[2/3] South Leicestershire Triples League...
+  Fetching fixture sheets...
+  Fetching Google Sheet CSV: Div 1 Fixtures
+    Tab 1 (gid=0): 44 rows
+    Total: 37 rows
+    Div 1: 7 Blaby fixtures found
+  Fetching Google Sheet CSV: Div 2 Fixtures
+    Tab 1 (gid=0): 44 rows
+    Total: 37 rows
+    Div 2: 7 Blaby fixtures found
+  Fetching Google Sheet CSV: Div 3 Fixtures
+    Tab 1 (gid=0): 44 rows
+    Total: 37 rows
+    Div 3: 7 Blaby fixtures found
+  Fetching Google Sheet CSV: Div 4 Fixtures
+    Tab 1 (gid=0): 44 rows
+    Total: 37 rows
+    Div 4: no Blaby fixtures
+  Fetching Google Sheet CSV: Div 5 Fixtures
+    Tab 1 (gid=0): 44 rows
+    Total: 37 rows
+    Div 5: no Blaby fixtures
+  Fetching Google Sheet CSV: Div 6 Fixtures
+    Tab 1 (gid=0): 65 rows
+    Total: 56 rows
+    Div 6: no Blaby fixtures
+  Fetching results sheet...
+  Fetching tables sheet...
+    [WARN] CSV export returned 400 for League Tables, trying htmlembed...
+    Got 40 rows via gviz/tq
+  Tables: skipping South Leics table (no Division headers found (may be Partridge Cup data)), using placeholder
+    Total: 21 fixtures, 51 results
+
+[3/3] Leicester Bowls League (Division 1 only)...
+  Downloading: Division 1
+    Division 1: 1 table(s), 82 total rows, 10 Blaby rows
+    Division 1: 10 Blaby rows, 82 total rows
+  Downloading: League Tables 2026
+    League Tables 2026: 1 table(s), 35 total rows, 1 Blaby rows
+    League Tables 2026: 1 Blaby rows, 35 total rows
+
+Generating HTML files...
+    Leicester table: 82 rows x 23 cols
+    Detected 2 column group(s) starting at columns: [0, 12]
+    Leicester parsed: 10 Blaby fixtures found
+      29th April: Fosseway v Blaby (upcoming)
+      6th May: Blaby v Birstall (upcoming)
+      13th May: Blaby v Kingscroft (upcoming)
+      20th May: Countesthorpe v Blaby (upcoming)
+      27th May: Westcotes v Blaby (upcoming)
+      10th June: Blaby v Fosseway (upcoming)
+      24th June: Birstall v Blaby (upcoming)
+      8th July: Kingscroft v Blaby (upcoming)
+      22nd July: Blaby v Countesthorpe (upcoming)
+      29th July: Blaby v Westcotes (upcoming)
+    Leicester table: 82 rows x 23 cols
+    Detected 2 column group(s) starting at columns: [0, 12]
+    Leicester parsed: 10 Blaby fixtures found
+      29th April: Fosseway v Blaby (upcoming)
+      6th May: Blaby v Birstall (upcoming)
+      13th May: Blaby v Kingscroft (upcoming)
+      20th May: Countesthorpe v Blaby (upcoming)
+      27th May: Westcotes v Blaby (upcoming)
+      10th June: Blaby v Fosseway (upcoming)
+      24th June: Birstall v Blaby (upcoming)
+      8th July: Kingscroft v Blaby (upcoming)
+      22nd July: Blaby v Countesthorpe (upcoming)
+      29th July: Blaby v Westcotes (upcoming)
+  Written: index.html
+  Written: fixtures.html
+  Written: results.html
+  Written: table-hinckley-div1.html
+  Written: table-hinckley-div4.html
+  Written: table-south-leics.html
+  Written: table-leicester.html
+
+Pushing to GitHub Pages...
+  Pushed to GitHub at 2026-04-24 22:30
+  Telegram notification sent.
+
+Done! Live at https://andygoodger-svg.github.io/blaby-bowls/
+============================================================

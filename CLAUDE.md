@@ -94,3 +94,33 @@ cat ~/blaby-bowls/scraper.log
 - **GitHub auth** uses `gh` CLI with the `andygoodger-svg` account via osxkeychain. If pushes start failing, run `gh auth login -h github.com` and sign in as `andygoodger-svg`.
 - **Season dates:** Hinckley opens early May; South Leics starts 28 April. Before then, the generated pages show "No data yet" placeholders — that's not a bug.
 - **Rows with "blaby" (case-insensitive)** in league tables get CSS class `blaby-row` applied to highlight them. When adding new leagues, mirror this pattern.
+
+## Status (as of 2026-04-24)
+
+Scheduling is working correctly — launchd fires at 07:00 daily and successful runs are confirmed in `scraper.log` for Apr 22, 23, 24. No further debugging needed.
+
+### Changes made 2026-04-24 (session 1)
+
+**Leicester data caching** — The Leicester Bowls League website occasionally returns 521 (Cloudflare origin) errors (happened on the 07:00 run today). Previously this wiped the Leicester sections from the live site. Now `scraper_mac.py` persists the last successful parse to `.leicester_cache.json` and loads it as a fallback when a download fails. The Telegram notification includes a ⚠️ warning when cached data is being used.
+
+**South Leics tables re-enabled** — `scrape_south_leics()` now tries to fetch the tables sheet each run, but validates the content (must contain "division 1" / "div 1") before using it — silently falls back to a placeholder if the sheet still contains Partridge Cup data or returns nothing.
+
+**Debug output removed** — `parse_leicester_docx()` no longer dumps 16 rows of raw cell data per run. Replaced with a single summary line.
+
+**Telegram failure reporting** — The Telegram notification now includes a ⚠️ line if any Leicester download failed and cached data was used.
+
+### Changes made 2026-04-24 (session 2)
+
+**Hinckley full-season fixtures** — `scrape_hinckley_team_fixtures()` was only fetching `f=0` (first half of season, up to end of June). Now fetches both `f=0` and `f=1` and merges, deduplicating by `(date, opponent)`. Expected fixture count to roughly double (~7 → ~14 per team) once the league publishes the second half of the season.
+
+**South Leics full-season fixtures** — `fetch_south_leics_fixture_sheet()` now tries `gid=0` (first tab) and `gid=1` (second tab) for each division sheet and merges the rows. If the league splits their schedule across two sheet tabs, both halves will now appear. Note: `gid=1` currently returns duplicate data (no new rows), so the second half is likely not yet published or is on a different tab ID.
+
+**Migration to internal drive** — Project was previously on `/Volumes/SSD_1/blaby-bowls` (external SSD). All code now updated to use `OUTPUT_DIR = "/Users/andrewgoodger/blaby-bowls"`. The external SSD location should no longer be used.
+
+### To-do / watch items
+
+- Monitor daily runs to confirm Hinckley fixture counts increase from 7 to ~14 per team once the league publishes second-half fixtures.
+- If South Leics fixture counts don't increase once the season is underway, open a fixture sheet in a browser, click the second tab, and read the `gid=XXXXX` value from the URL — update `fetch_south_leics_fixture_sheet()` to use those actual gid values.
+- South Leics league tables will auto-enable once the league publishes 2026 standings (expected after first match week, ~28 April 2026).
+- The duplicate launchd job `com.andrewgoodger.blaby-bowls` is still present — confirm with user before removing.
+- Leicester docx structure: the wide two-column table layout is parsed by `parse_leicester_fixtures_structured()`. If the club changes their docx format, this will need revisiting.
