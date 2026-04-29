@@ -898,7 +898,8 @@ def gen_results(hinckley_data, south_leics, leicester_data):
 
     # --- South Leics (2026 only) ---
     b += '<div class="league-header">South Leicestershire Triples League</div>\n'
-    results_2026 = [r for r in south_leics["results"] if "2026" in r.get("date", "")]
+    # Include results with a 2026 date, OR results with no date (sheet omits date headers)
+    results_2026 = [r for r in south_leics["results"] if "2026" in r.get("date", "") or not r.get("date")]
     if results_2026:
         formatted = []
         for r in results_2026:
