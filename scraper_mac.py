@@ -671,23 +671,30 @@ def scrape_south_leics():
                     print(f"    Result: [{current_date}] {' | '.join(clean)}")
 
     # --- Fill in missing dates from fixture list ---
-    # The fixture sheet has each team on its own row, so we only ever capture
-    # the Blaby team's row (e.g. cells=["Blaby A"]) — not the full home/away pair.
-    # Strategy: build an ordered list of fixture dates per Blaby team, then assign
-    # them in order to results for that team (1st result → 1st fixture date, etc.)
+    # Use fixture_divs (already grouped by division) to build ordered fixture dates
+    # per Blaby team. Each division has exactly one Blaby team; some fixture entries
+    # may have the opponent as fcells[0] (away games), so we scan the whole div to
+    # find the Blaby team name, then assign ALL that div's dates to that team.
     from collections import defaultdict
     team_fixture_dates = defaultdict(list)
-    for fixture in results["fixtures"]:
-        fcells = fixture["cells"]
-        if not fcells:
+    for div_name, fixtures in results["fixture_divs"].items():
+        # Find which Blaby team plays in this division
+        blaby_team = None
+        for f in fixtures:
+            for cell in f.get("cells", []):
+                if cell.lower().startswith("blaby"):
+                    blaby_team = cell.lower().strip()
+                    break
+            if blaby_team:
+                break
+        if not blaby_team:
             continue
-        blaby_team = fcells[0].lower().strip()
-        if "blaby" not in blaby_team:
-            continue
-        date = fixture["date"]
-        if date and "2026" not in date:
-            date = date + " 2026"
-        team_fixture_dates[blaby_team].append(date)
+        # All fixtures in this div belong to that Blaby team
+        for f in fixtures:
+            date = f["date"]
+            if date and "2026" not in date:
+                date = date + " 2026"
+            team_fixture_dates[blaby_team].append(date)
 
     team_date_idx = defaultdict(int)
     for result in results["results"]:
