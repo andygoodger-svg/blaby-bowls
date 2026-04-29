@@ -670,6 +670,30 @@ def scrape_south_leics():
                     })
                     print(f"    Result: [{current_date}] {' | '.join(clean)}")
 
+    # --- Fill in missing dates from fixture list ---
+    # The results sheet often omits date headers, so we look up each result's
+    # home/away teams in the already-parsed fixture list to find the date.
+    for result in results["results"]:
+        if result.get("date"):
+            continue  # already has a date
+        cells = result["cells"]
+        if len(cells) < 3:
+            continue
+        home = cells[0].lower().strip()
+        away = cells[2].lower().strip()
+        for fixture in results["fixtures"]:
+            fcells = fixture["cells"]
+            if len(fcells) < 2:
+                continue
+            fhome = fcells[0].lower().strip()
+            faway = fcells[-1].lower().strip()
+            if fhome == home and faway == away:
+                date = fixture["date"]
+                if date and "2026" not in date:
+                    date = date + " 2026"
+                result["date"] = date
+                break
+
     # --- TABLES ---
     print("  Fetching tables sheet...")
     rows = fetch_google_sheet_csv(SOUTH_LEICS_TABLES_SHEET, "League Tables")
