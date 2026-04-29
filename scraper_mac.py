@@ -681,18 +681,24 @@ def scrape_south_leics():
             continue
         home = cells[0].lower().strip()
         away = cells[2].lower().strip()
+        print(f"    Date lookup: '{home}' v '{away}'")
+        matched = False
         for fixture in results["fixtures"]:
             fcells = fixture["cells"]
             if len(fcells) < 2:
                 continue
             fhome = fcells[0].lower().strip()
             faway = fcells[-1].lower().strip()
+            print(f"      vs fixture: '{fhome}' v '{faway}' ({fixture['date']})")
             if fhome == home and faway == away:
                 date = fixture["date"]
                 if date and "2026" not in date:
                     date = date + " 2026"
                 result["date"] = date
+                matched = True
                 break
+        if not matched:
+            print(f"    [WARN] No fixture date found for: {home} v {away}")
 
     # --- TABLES ---
     print("  Fetching tables sheet...")
