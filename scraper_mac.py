@@ -642,9 +642,16 @@ def scrape_south_leics():
                 continue
             first_cell = row[0].strip() if row else ""
 
-            # Check for date headers
-            if re.match(r'\d{1,2}(st|nd|rd|th)\s+\w+\s+\d{4}', first_cell):
-                current_date = first_cell
+            # Check for date headers — handle multiple formats:
+            # "28th April 2026", "28th April", "Monday 28th April 2026", "Monday 28th April"
+            _MONTHS = r'(January|February|March|April|May|June|July|August|September|October|November|December)'
+            _DAY_PATTERNS = [
+                rf'\d{{1,2}}(?:st|nd|rd|th)\s+{_MONTHS}(?:\s+\d{{4}})?',
+                rf'(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{{1,2}}(?:st|nd|rd|th)\s+{_MONTHS}(?:\s+\d{{4}})?',
+            ]
+            _date_hit = any(re.match(p, first_cell, re.IGNORECASE) for p in _DAY_PATTERNS)
+            if _date_hit:
+                current_date = first_cell if "2026" in first_cell else first_cell + " 2026"
                 continue
 
             # Check for section headers (e.g. "SEMI FINALS", "QUARTER FINALS")
@@ -661,6 +668,7 @@ def scrape_south_leics():
                         "section": current_section,
                         "cells": clean
                     })
+                    print(f"    Result: [{current_date}] {' | '.join(clean)}")
 
     # --- TABLES ---
     print("  Fetching tables sheet...")
