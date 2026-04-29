@@ -671,34 +671,46 @@ def scrape_south_leics():
                     print(f"    Result: [{current_date}] {' | '.join(clean)}")
 
     # --- Fill in missing dates from fixture list ---
-    # The results sheet often omits date headers, so we look up each result's
-    # home/away teams in the already-parsed fixture list to find the date.
+    # The fixture sheet has each team on its own row, so we only ever capture
+    # the Blaby team's row (e.g. cells=["Blaby A"]) — not the full home/away pair.
+    # Strategy: build an ordered list of fixture dates per Blaby team, then assign
+    # them in order to results for that team (1st result → 1st fixture date, etc.)
+    from collections import defaultdict
+    team_fixture_dates = defaultdict(list)
+    for fixture in results["fixtures"]:
+        fcells = fixture["cells"]
+        if not fcells:
+            continue
+        blaby_team = fcells[0].lower().strip()
+        if "blaby" not in blaby_team:
+            continue
+        date = fixture["date"]
+        if date and "2026" not in date:
+            date = date + " 2026"
+        team_fixture_dates[blaby_team].append(date)
+
+    team_date_idx = defaultdict(int)
     for result in results["results"]:
         if result.get("date"):
-            continue  # already has a date
+            continue
         cells = result["cells"]
         if len(cells) < 3:
             continue
-        home = cells[0].lower().strip()
-        away = cells[2].lower().strip()
-        print(f"    Date lookup: '{home}' v '{away}'")
-        matched = False
-        for fixture in results["fixtures"]:
-            fcells = fixture["cells"]
-            if len(fcells) < 2:
-                continue
-            fhome = fcells[0].lower().strip()
-            faway = fcells[-1].lower().strip()
-            print(f"      vs fixture: '{fhome}' v '{faway}' ({fixture['date']})")
-            if fhome == home and faway == away:
-                date = fixture["date"]
-                if date and "2026" not in date:
-                    date = date + " 2026"
-                result["date"] = date
-                matched = True
-                break
-        if not matched:
-            print(f"    [WARN] No fixture date found for: {home} v {away}")
+        # Find which Blaby team is in this result (home or away)
+        if "blaby" in cells[0].lower():
+            blaby_team = cells[0].lower().strip()
+        elif "blaby" in cells[2].lower():
+            blaby_team = cells[2].lower().strip()
+        else:
+            continue
+        idx = team_date_idx[blaby_team]
+        dates = team_fixture_dates[blaby_team]
+        if idx < len(dates):
+            result["date"] = dates[idx]
+            team_date_idx[blaby_team] += 1
+            print(f"    Date resolved: {blaby_team} result {idx+1} → {dates[idx]}")
+        else:
+            print(f"    [WARN] No fixture date for result {idx+1} of {blaby_team}")
 
     # --- TABLES ---
     print("  Fetching tables sheet...")
