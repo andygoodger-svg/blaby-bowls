@@ -104,6 +104,7 @@ h2{color:#1a5c2e;margin:15px 0 8px;font-size:1.2em;border-bottom:2px solid #1a5c
 h3{color:#2d7a45;margin:10px 0 6px;font-size:1em}
 table{border-collapse:collapse;width:100%;margin-bottom:15px;font-size:.85em}
 th{background:#1a5c2e;color:#fff;padding:6px 8px;text-align:left;font-weight:600}
+th[colspan],th[rowspan]{text-align:center;border-bottom:1px solid rgba(255,255,255,0.3)}
 td{padding:5px 8px;border-bottom:1px solid #e0e0e0}
 tr:nth-child(even){background:#f5f9f6}
 tr.blaby-row{background:#d4edda!important;font-weight:600}
@@ -740,15 +741,31 @@ def scrape_south_leics():
         current_rows = []
         table_html = ""
 
+        # Two-row header for South Leics tables.
+        # Cols: Team | Pl. | Games(W,D,L) | Rinks(W,D,L) | Shots(F,A) | Diff. | Pts.
+        SOUTH_LEICS_TABLE_HEADER = (
+            '<tr>'
+            '<th rowspan="2">Team</th>'
+            '<th rowspan="2">Pl.</th>'
+            '<th colspan="3">Games</th>'
+            '<th colspan="3">Rinks</th>'
+            '<th colspan="2">Shots</th>'
+            '<th rowspan="2">Diff.</th>'
+            '<th rowspan="2">Pts.</th>'
+            '</tr>\n'
+            '<tr>'
+            '<th>W</th><th>D</th><th>L</th>'
+            '<th>W</th><th>D</th><th>L</th>'
+            '<th>F</th><th>A</th>'
+            '</tr>\n'
+        )
+
         def _flush_div():
             nonlocal table_html, current_rows
             if current_rows and current_div:
                 if any("blaby" in " ".join(r).lower() for r in current_rows):
-                    # Replace "Division N" first-column header with "Team"
-                    hdrs = (["Team"] + column_headers[1:]) if column_headers else []
                     table_html += f'<h3>{current_div}</h3>\n<table>\n'
-                    if hdrs:
-                        table_html += '<tr>' + ''.join(f'<th>{h}</th>' for h in hdrs) + '</tr>\n'
+                    table_html += SOUTH_LEICS_TABLE_HEADER
                     for tr in current_rows:
                         is_blaby = "blaby" in " ".join(tr).lower()
                         cls = ' class="blaby-row"' if is_blaby else ""

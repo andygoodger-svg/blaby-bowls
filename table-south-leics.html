@@ -5,6 +5,7 @@ h2{color:#1a5c2e;margin:15px 0 8px;font-size:1.2em;border-bottom:2px solid #1a5c
 h3{color:#2d7a45;margin:10px 0 6px;font-size:1em}
 table{border-collapse:collapse;width:100%;margin-bottom:15px;font-size:.85em}
 th{background:#1a5c2e;color:#fff;padding:6px 8px;text-align:left;font-weight:600}
+th[colspan],th[rowspan]{text-align:center;border-bottom:1px solid rgba(255,255,255,0.3)}
 td{padding:5px 8px;border-bottom:1px solid #e0e0e0}
 tr:nth-child(even){background:#f5f9f6}
 tr.blaby-row{background:#d4edda!important;font-weight:600}
@@ -19,7 +20,8 @@ tr.blaby-match{background:#e8f5e9}
 <h3>League Table</h3>
 <h3>Division 1</h3>
 <table>
-<tr><th>Team</th><th>Pl.</th><th>W</th><th>G A M E S D</th><th>L</th><th>W</th><th>R I N K S D</th><th>L</th><th>F</th><th>SHOTS A</th><th>Diff.</th><th>Pts.</th></tr>
+<tr><th rowspan="2">Team</th><th rowspan="2">Pl.</th><th colspan="3">Games</th><th colspan="3">Rinks</th><th colspan="2">Shots</th><th rowspan="2">Diff.</th><th rowspan="2">Pts.</th></tr>
+<tr><th>W</th><th>D</th><th>L</th><th>W</th><th>D</th><th>L</th><th>F</th><th>A</th></tr>
 <tr><td>Leicester A</td><td>1</td><td>1</td><td>0</td><td>0</td><td>2</td><td>0</td><td>1</td><td>57</td><td>33</td><td>24</td><td>8</td></tr>
 <tr class="blaby-row"><td>Blaby A</td><td>1</td><td>1</td><td>0</td><td>0</td><td>2</td><td>0</td><td>1</td><td>55</td><td>37</td><td>18</td><td>8</td></tr>
 <tr><td>Fleckney A</td><td>1</td><td>1</td><td>0</td><td>0</td><td>2</td><td>0</td><td>1</td><td>54</td><td>46</td><td>8</td><td>8</td></tr>
@@ -31,7 +33,8 @@ tr.blaby-match{background:#e8f5e9}
 </table>
 <h3>Division 2</h3>
 <table>
-<tr><th>Team</th><th>Pl.</th><th>W</th><th>G A M E S D</th><th>L</th><th>W</th><th>R I N K S D</th><th>L</th><th>F</th><th>SHOTS A</th><th>Diff.</th><th>Pts.</th></tr>
+<tr><th rowspan="2">Team</th><th rowspan="2">Pl.</th><th colspan="3">Games</th><th colspan="3">Rinks</th><th colspan="2">Shots</th><th rowspan="2">Diff.</th><th rowspan="2">Pts.</th></tr>
+<tr><th>W</th><th>D</th><th>L</th><th>W</th><th>D</th><th>L</th><th>F</th><th>A</th></tr>
 <tr><td>Oadby</td><td>1</td><td>1</td><td>0</td><td>0</td><td>3</td><td>0</td><td>0</td><td>55</td><td>39</td><td>16</td><td>10</td></tr>
 <tr><td>Evington Park</td><td>1</td><td>1</td><td>0</td><td>0</td><td>2</td><td>0</td><td>1</td><td>58</td><td>37</td><td>21</td><td>8</td></tr>
 <tr><td>North Kilworth A</td><td>1</td><td>1</td><td>0</td><td>0</td><td>2</td><td>0</td><td>1</td><td>58</td><td>44</td><td>14</td><td>8</td></tr>
@@ -43,7 +46,8 @@ tr.blaby-match{background:#e8f5e9}
 </table>
 <h3>Division 3</h3>
 <table>
-<tr><th>Team</th><th>Pl.</th><th>W</th><th>G A M E S D</th><th>L</th><th>W</th><th>R I N K S D</th><th>L</th><th>F</th><th>SHOTS A</th><th>Diff.</th><th>Pts.</th></tr>
+<tr><th rowspan="2">Team</th><th rowspan="2">Pl.</th><th colspan="3">Games</th><th colspan="3">Rinks</th><th colspan="2">Shots</th><th rowspan="2">Diff.</th><th rowspan="2">Pts.</th></tr>
+<tr><th>W</th><th>D</th><th>L</th><th>W</th><th>D</th><th>L</th><th>F</th><th>A</th></tr>
 <tr><td>Kibworth A</td><td>1</td><td>1</td><td>0</td><td>0</td><td>3</td><td>0</td><td>0</td><td>56</td><td>29</td><td>27</td><td>10</td></tr>
 <tr><td>Shakespeare Park</td><td>1</td><td>1</td><td>0</td><td>0</td><td>2</td><td>0</td><td>1</td><td>70</td><td>43</td><td>27</td><td>8</td></tr>
 <tr><td>Brookfield Electric A</td><td>1</td><td>1</td><td>0</td><td>0</td><td>2</td><td>0</td><td>1</td><td>57</td><td>41</td><td>16</td><td>8</td></tr>
@@ -53,4 +57,4 @@ tr.blaby-match{background:#e8f5e9}
 <tr class="blaby-row"><td>Blaby C</td><td>1</td><td>0</td><td>0</td><td>1</td><td>1</td><td>0</td><td>2</td><td>43</td><td>70</td><td>-27</td><td>2</td></tr>
 <tr><td>Leicester B</td><td>1</td><td>0</td><td>0</td><td>1</td><td>0</td><td>0</td><td>3</td><td>29</td><td>56</td><td>-27</td><td>0</td></tr>
 </table>
-<p class="updated">Last updated: 30 Apr 2026 07:14</p></body></html>
+<p class="updated">Last updated: 30 Apr 2026 07:23</p></body></html>
