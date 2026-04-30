@@ -731,74 +731,53 @@ def scrape_south_leics():
         print(f"  Tables: skipping South Leics table ({why}), using placeholder")
         rows = None
     if rows:
-        # Parse the table data - find groups/divisions containing Blaby
-        current_group = ""
+        # Structure: Row 1 = "Division 1" + column headers (many cells).
+        # Subsequent division rows = "Division N" alone (1 cell) — used as separators.
+        # Team rows = club name + stats.
+        # Only render divisions that contain a Blaby team.
+        column_headers = None  # shared across all divisions (only defined once)
+        current_div = None
+        current_rows = []
         table_html = ""
-        current_table_rows = []
-        current_headers = []
+
+        def _flush_div():
+            nonlocal table_html, current_rows
+            if current_rows and current_div:
+                if any("blaby" in " ".join(r).lower() for r in current_rows):
+                    # Replace "Division N" first-column header with "Team"
+                    hdrs = (["Team"] + column_headers[1:]) if column_headers else []
+                    table_html += f'<h3>{current_div}</h3>\n<table>\n'
+                    if hdrs:
+                        table_html += '<tr>' + ''.join(f'<th>{h}</th>' for h in hdrs) + '</tr>\n'
+                    for tr in current_rows:
+                        is_blaby = "blaby" in " ".join(tr).lower()
+                        cls = ' class="blaby-row"' if is_blaby else ""
+                        table_html += f'<tr{cls}>' + ''.join(f'<td>{c}</td>' for c in tr) + '</tr>\n'
+                    table_html += '</table>\n'
+            current_rows = []
 
         for row in rows:
-            if not any(cell.strip() for cell in row):
-                # Empty row - might be end of a group
-                if current_table_rows:
-                    # Check if this group has Blaby
-                    group_text = " ".join(str(r) for r in current_table_rows).lower()
-                    if "blaby" in group_text:
-                        table_html += f'<h3>{current_group}</h3>\n<table>\n'
-                        if current_headers:
-                            table_html += '<tr>' + ''.join(f'<th>{h}</th>' for h in current_headers) + '</tr>\n'
-                        for tr in current_table_rows:
-                            is_blaby = "blaby" in " ".join(tr).lower()
-                            cls = ' class="blaby-row"' if is_blaby else ""
-                            table_html += f'<tr{cls}>' + ''.join(f'<td>{c}</td>' for c in tr) + '</tr>\n'
-                        table_html += '</table>\n'
-                    current_table_rows = []
-                    current_headers = []
+            non_empty = [c.strip() for c in row if c.strip()]
+            if not non_empty:
                 continue
+            first = non_empty[0]
+            if re.match(r'Division\s+\d+', first, re.IGNORECASE):
+                if len(non_empty) > 2:
+                    # First occurrence: "Division 1" + column headers in same row
+                    _flush_div()
+                    column_headers = non_empty
+                    current_div = first
+                    current_rows = []
+                else:
+                    # Transition row: just "Division N" — start new division
+                    _flush_div()
+                    current_div = first
+                    current_rows = []
+            elif column_headers is not None:
+                # Regular team data row
+                current_rows.append(non_empty)
 
-            clean = [c.strip() for c in row]
-
-            # Check for group/division headers
-            first = clean[0] if clean else ""
-            if re.match(r'(Group|Division)\s+', first, re.IGNORECASE) and len([c for c in clean if c]) <= 2:
-                if current_table_rows:
-                    group_text = " ".join(str(r) for r in current_table_rows).lower()
-                    if "blaby" in group_text:
-                        table_html += f'<h3>{current_group}</h3>\n<table>\n'
-                        if current_headers:
-                            table_html += '<tr>' + ''.join(f'<th>{h}</th>' for h in current_headers) + '</tr>\n'
-                        for tr in current_table_rows:
-                            is_blaby = "blaby" in " ".join(tr).lower()
-                            cls = ' class="blaby-row"' if is_blaby else ""
-                            table_html += f'<tr{cls}>' + ''.join(f'<td>{c}</td>' for c in tr) + '</tr>\n'
-                        table_html += '</table>\n'
-                current_table_rows = []
-                current_headers = []
-                current_group = first
-                continue
-
-            # Check for header rows (Pl., W, D, L, etc.)
-            if any(h in " ".join(clean).upper() for h in ["PL.", "PL", "PLAYED", "PTS"]):
-                current_headers = [c for c in clean if c]
-                continue
-
-            # Regular data row
-            if any(c for c in clean if c):
-                current_table_rows.append([c for c in clean if c])
-
-        # Flush last group
-        if current_table_rows:
-            group_text = " ".join(str(r) for r in current_table_rows).lower()
-            if "blaby" in group_text:
-                table_html += f'<h3>{current_group}</h3>\n<table>\n'
-                if current_headers:
-                    table_html += '<tr>' + ''.join(f'<th>{h}</th>' for h in current_headers) + '</tr>\n'
-                for tr in current_table_rows:
-                    is_blaby = "blaby" in " ".join(tr).lower()
-                    cls = ' class="blaby-row"' if is_blaby else ""
-                    table_html += f'<tr{cls}>' + ''.join(f'<td>{c}</td>' for c in tr) + '</tr>\n'
-                table_html += '</table>\n'
-
+        _flush_div()  # flush the final division
         results["tables"] = table_html
 
     return results
