@@ -95,7 +95,7 @@ cat ~/blaby-bowls/scraper.log
 - **Season dates:** Hinckley opens early May; South Leics starts 28 April. Before then, the generated pages show "No data yet" placeholders — that's not a bug.
 - **Rows with "blaby" (case-insensitive)** in league tables get CSS class `blaby-row` applied to highlight them. When adding new leagues, mirror this pattern.
 
-## Status (as of 2026-04-24)
+## Status (as of 2026-05-01)
 
 Scheduling is working correctly — launchd fires at 07:00 daily and successful runs are confirmed in `scraper.log` for Apr 22, 23, 24. No further debugging needed.
 
@@ -117,10 +117,24 @@ Scheduling is working correctly — launchd fires at 07:00 daily and successful 
 
 **Migration to internal drive** — Project was previously on `/Volumes/SSD_1/blaby-bowls` (external SSD). All code now updated to use `OUTPUT_DIR = "/Users/andrewgoodger/blaby-bowls"`. The external SSD location should no longer be used.
 
+### Changes made 2026-04-29 / 2026-05-01 (session 3)
+
+**South Leics results display fixed** — Results were found by the scraper but filtered out because dates were empty. Two fixes: (1) date regex now flexible (accepts with/without day-of-week and appends "2026" if year absent); (2) `gen_results` filter changed to include results with no date as well as those containing "2026".
+
+**South Leics result dates from fixtures** — Results sheet has no date column. Added a post-pass that looks up dates from `fixture_divs` and assigns them sequentially per Blaby team (Blaby A gets fixture 1's date, Blaby B gets fixture 1's date, etc.).
+
+**South Leics league tables** — Fixed wrong `SOUTH_LEICS_TABLES_SHEET` ID (was pointing at Partridge Cup sheet). Correct sheet ID: `1nEOs1LaiaFjhLKg9XBc3qhr2gLPbRfl9i93lGQ8aurI`. Table parsing rewritten to split by division and only show divisions containing a Blaby team. Two-row column header added (Games W/D/L, Rinks W/D/L, Shots F/A, Diff, Pts).
+
+**Leicester docx URLs updated** — Files were re-uploaded on 30 April 2026 (new GUIDs). Updated `LEICESTER_DOCX` to new attachment URLs:
+- `div1`: `f=d1ddf780-e031-4311-a40c-2136c80a392a.docx`
+- `tables`: `f=77235161-97d1-4f24-8edd-abf94b26e021.docx`
+
+**Leicester docx content validation** — Added `PK` magic-byte check immediately after download. If the server returns an HTML error page with HTTP 200, the scraper now raises a clear `ValueError` ("Server returned non-docx content; URL may need updating") instead of failing inside python-docx with the cryptic "Package not found" error.
+
 ### To-do / watch items
 
 - Monitor daily runs to confirm Hinckley fixture counts increase from 7 to ~14 per team once the league publishes second-half fixtures.
 - If South Leics fixture counts don't increase once the season is underway, open a fixture sheet in a browser, click the second tab, and read the `gid=XXXXX` value from the URL — update `fetch_south_leics_fixture_sheet()` to use those actual gid values.
-- South Leics league tables will auto-enable once the league publishes 2026 standings (expected after first match week, ~28 April 2026).
 - The duplicate launchd job `com.andrewgoodger.blaby-bowls` is still present — confirm with user before removing.
 - Leicester docx structure: the wide two-column table layout is parsed by `parse_leicester_fixtures_structured()`. If the club changes their docx format, this will need revisiting.
+- When the Leicester league re-uploads the docx files (e.g. end of season update), the `f=` GUIDs in `LEICESTER_DOCX` will need updating again — the clearest symptom is the "Server returned non-docx content" error in the log.

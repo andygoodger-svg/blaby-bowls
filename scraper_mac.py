@@ -73,11 +73,11 @@ HINCKLEY_TEAMS = [
 LEICESTER_DOCX = {
     "div1": {
         "name": "Division 1",
-        "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=0eec92c2%2D60ad%2D405e%2Db88d%2D59e311d126fd%2Edocx&o=Division%2D1%2DResults%2DFixtures%2Dand%2Dresults%2D2026%2Edocx"
+        "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=d1ddf780%2De031%2D4311%2Da40c%2D2136c80a392a%2Edocx&o=Division%2D1%2DFixtures%2Dand%2Dresults%2D2026%2Edocx"
     },
     "tables": {
         "name": "League Tables 2026",
-        "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=da5c79df%2D2126%2D472c%2D928d%2Ddd8f4e9999d3%2Edocx&o=League%2DTables%2D2026%2Edocx"
+        "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=77235161%2D97d1%2D4f24%2D8edd%2Dabf94b26e021%2Edocx&o=League%2DTables%2D2026%2Edocx"
     }
 }
 
@@ -339,6 +339,11 @@ def parse_leicester_docx(url, label):
         print(f"  Downloading: {label}")
         r = requests.get(url, headers=HEADERS, timeout=30)
         r.raise_for_status()
+        if not r.content[:2] == b'PK':
+            raise ValueError(
+                f"Server returned non-docx content (got {r.content[:20]!r}); "
+                "URL may need updating"
+            )
         tmp = os.path.join(tempfile.gettempdir(), "leic_bowls.docx")
         with open(tmp, "wb") as f:
             f.write(r.content)
