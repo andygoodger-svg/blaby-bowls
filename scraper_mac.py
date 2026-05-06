@@ -677,14 +677,13 @@ def scrape_south_leics():
                     print(f"    Result: [{current_date}] {' | '.join(clean)}")
 
     # --- Fill in missing dates from fixture list ---
-    # Use fixture_divs (already grouped by division) to build ordered fixture dates
-    # per Blaby team. Each division has exactly one Blaby team; some fixture entries
-    # may have the opponent as fcells[0] (away games), so we scan the whole div to
-    # find the Blaby team name, then assign ALL that div's dates to that team.
+    # Match each result to its fixture by opponent name (more reliable than sequential
+    # assignment, which breaks when results in the sheet are newest-first but fixtures
+    # are oldest-first).
     from collections import defaultdict
-    team_fixture_dates = defaultdict(list)
+    # Build {blaby_team_lower: {opponent_lower: date}} from fixture_divs
+    fixture_opponent_date = defaultdict(dict)
     for div_name, fixtures in results["fixture_divs"].items():
-        # Find which Blaby team plays in this division
         blaby_team = None
         for f in fixtures:
             for cell in f.get("cells", []):
@@ -695,35 +694,38 @@ def scrape_south_leics():
                 break
         if not blaby_team:
             continue
-        # All fixtures in this div belong to that Blaby team
         for f in fixtures:
             date = f["date"]
             if date and "2026" not in date:
                 date = date + " 2026"
-            team_fixture_dates[blaby_team].append(date)
+            # Opponent is the non-Blaby, non-numeric cell in the fixture row
+            for cell in f.get("cells", []):
+                if not cell.lower().startswith("blaby") and not cell.strip().isdigit() and cell.strip():
+                    fixture_opponent_date[blaby_team][cell.strip().lower()] = date
+                    break
 
-    team_date_idx = defaultdict(int)
     for result in results["results"]:
         if result.get("date"):
             continue
         cells = result["cells"]
-        if len(cells) < 3:
+        if len(cells) < 2:
             continue
-        # Find which Blaby team is in this result (home or away)
-        if "blaby" in cells[0].lower():
-            blaby_team = cells[0].lower().strip()
-        elif "blaby" in cells[2].lower():
-            blaby_team = cells[2].lower().strip()
-        else:
+        # Identify Blaby team and opponent from result cells
+        blaby_team = None
+        opponent = None
+        for cell in cells:
+            if cell.lower().startswith("blaby"):
+                blaby_team = cell.lower().strip()
+            elif not cell.strip().isdigit() and cell.strip():
+                opponent = cell.strip().lower()
+        if not blaby_team or not opponent:
             continue
-        idx = team_date_idx[blaby_team]
-        dates = team_fixture_dates[blaby_team]
-        if idx < len(dates):
-            result["date"] = dates[idx]
-            team_date_idx[blaby_team] += 1
-            print(f"    Date resolved: {blaby_team} result {idx+1} → {dates[idx]}")
+        matched_date = fixture_opponent_date.get(blaby_team, {}).get(opponent)
+        if matched_date:
+            result["date"] = matched_date
+            print(f"    Date resolved: {blaby_team} vs {opponent} → {matched_date}")
         else:
-            print(f"    [WARN] No fixture date for result {idx+1} of {blaby_team}")
+            print(f"    [WARN] No fixture date for {blaby_team} vs {opponent}")
 
     # --- TABLES ---
     print("  Fetching tables sheet...")
@@ -859,13 +861,18 @@ def gen_fixtures(hinckley_data, south_leics, leicester_data):
             fixtures = []
             for f in raw_fixtures:
                 cells = f["cells"]
-                if len(cells) >= 2:
+                if len(cells) >= 1:
                     home = cells[0]
-                    away = cells[-1] if len(cells) == 2 else cells[1]
-                    if len(cells) == 4:
-                        home = cells[0]
-                        away = cells[2]
-                    fixtures.append({"date": f["date"], "home": home, "away": away, "score": None})
+                    # Away is the last cell that doesn't look like a score (not purely numeric).
+                    # Handles both pre-result rows [Home, Away] and post-result rows
+                    # [Home, HomeScore, AwayScore, Away] that appear once results are entered.
+                    away = ""
+                    for cell in reversed(cells[1:]):
+                        if not cell.strip().isdigit():
+                            away = cell.strip()
+                            break
+                    if away:
+                        fixtures.append({"date": f["date"], "home": home, "away": away, "score": None})
 
             b += f'<h3>{div_name}</h3>\n'
             b += gen_fixture_table(f'{team_name} Fixtures — {div_name}', fixtures)
