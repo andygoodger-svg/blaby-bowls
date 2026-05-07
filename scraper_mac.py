@@ -538,12 +538,23 @@ def _flush_team_pairs(team_buffer, default_date, fixtures, col3_list):
 
 
 def parse_leicester_table_div1(tables_data):
-    """Extract Division 1 section from the league tables docx."""
+    """Extract Division 1 section from the league tables docx.
+
+    The docx table has 16 columns with empty spacer columns between groups:
+      0=Team, 1=Pld, [2 spacer], 3=GW, 4=GD, 5=GL, [6 spacer],
+      7=RW, 8=RD, 9=RL, [10 spacer], 11=SF, 12=SA, 13=Dif, [14 spacer], 15=Pts
+    """
     if not tables_data or not tables_data["all_rows"]:
         return '<p class="no-data">No Leicester league table data yet.</p>'
 
-    # The tables docx has all 3 divisions in sequence.
-    # We need to find the Division 1 section and stop before Division 2.
+    # Column positions to extract
+    COL_IDXS = [0, 1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15]
+
+    def extract_cols(cells):
+        """Pull values at the known column positions; pad with '' if row is short."""
+        return [cells[i] if i < len(cells) else "" for i in COL_IDXS]
+
+    # Find the Division 1 data rows (between "Division 1" and "Division 2" headers)
     all_rows = tables_data["all_rows"]
     div1_rows = []
     in_div1 = False
@@ -552,7 +563,6 @@ def parse_leicester_table_div1(tables_data):
         cells = row_data["cells"]
         text = " ".join(cells).strip().lower()
 
-        # Detect division headers
         if "division 1" in text and "division 2" not in text:
             in_div1 = True
             continue
@@ -561,29 +571,42 @@ def parse_leicester_table_div1(tables_data):
             continue
 
         if in_div1:
-            # Skip empty rows
             if not any(c.strip() for c in cells):
+                continue
+            # Skip the multi-row header rows (contain "Rinks", "Shots", "Pld" etc.)
+            if any(h in text for h in ["rinks", "shots", "pld", "played"]):
                 continue
             div1_rows.append(cells)
 
     if not div1_rows:
-        # Fallback: if no division headers found, just show all rows
-        div1_rows = [r["cells"] for r in all_rows if any(c.strip() for c in r["cells"])]
-
-    if not div1_rows:
         return '<p class="no-data">No Division 1 league table data yet.</p>'
 
-    # Build HTML table
-    html = '<table>\n'
-    for i, cells in enumerate(div1_rows):
-        is_header = i == 0 and any(h in " ".join(cells).lower() for h in ["pld", "played", "won", "pts", "team"])
-        is_blaby = "blaby" in " ".join(cells).lower()
+    # Two-row grouped header (same style as South Leics table)
+    header = (
+        '<tr>'
+        '<th rowspan="2">Team</th>'
+        '<th rowspan="2">Pld</th>'
+        '<th colspan="3">Games</th>'
+        '<th colspan="3">Rinks</th>'
+        '<th colspan="2">Shots</th>'
+        '<th rowspan="2">Diff</th>'
+        '<th rowspan="2">Pts</th>'
+        '</tr>\n'
+        '<tr>'
+        '<th>W</th><th>D</th><th>L</th>'
+        '<th>W</th><th>D</th><th>L</th>'
+        '<th>F</th><th>A</th>'
+        '</tr>\n'
+    )
 
-        if is_header:
-            html += '<tr>' + ''.join(f'<th>{c}</th>' for c in cells[:8] if c.strip()) + '</tr>\n'
-        else:
-            cls = ' class="blaby-row"' if is_blaby else ""
-            html += f'<tr{cls}>' + ''.join(f'<td>{c}</td>' for c in cells[:8] if c.strip() or i > 0) + '</tr>\n'
+    html = '<table>\n' + header
+    for cells in div1_rows:
+        vals = extract_cols(cells)
+        if not any(v.strip() for v in vals):
+            continue
+        is_blaby = "blaby" in " ".join(vals).lower()
+        cls = ' class="blaby-row"' if is_blaby else ""
+        html += f'<tr{cls}>' + ''.join(f'<td>{v}</td>' for v in vals) + '</tr>\n'
     html += '</table>\n'
     return html
 
