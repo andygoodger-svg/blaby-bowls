@@ -73,12 +73,18 @@ HINCKLEY_TEAMS = [
 LEICESTER_DOCX = {
     "div1": {
         "name": "Division 1",
-        "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=d1ddf780%2De031%2D4311%2Da40c%2D2136c80a392a%2Edocx&o=Division%2D1%2DFixtures%2Dand%2Dresults%2D2026%2Edocx"
+        # Fallback URL — overridden at runtime by discover_leicester_docx_urls()
+        "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=a0259004%2D7047%2D4d30%2D97d0%2D81afc3ee2cb6%2Edocx&o=Division%2D1%2DFixtures%2Dand%2Dresults%2D2026%2Edocx",
+        "page": "https://www.leicesterbowlsleague.co.uk/community/leicester-bowls-league-15027/league-fixtures--results/",
+        "keyword": "Division 1 Fixtures",
     },
     "tables": {
         "name": "League Tables 2026",
-        "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=77235161%2D97d1%2D4f24%2D8edd%2Dabf94b26e021%2Edocx&o=League%2DTables%2D2026%2Edocx"
-    }
+        # Fallback URL — overridden at runtime by discover_leicester_docx_urls()
+        "url": "https://www.leicesterbowlsleague.co.uk/shared/attachments.asp?f=f6839182%2Ddf85%2D4f53%2D96c7%2D55677d22c4db%2Edocx&o=League%2DTables%2D2026%2Edocx",
+        "page": "https://www.leicesterbowlsleague.co.uk/community/leicester-bowls-league-15027/league-tables/",
+        "keyword": "League Tables",
+    },
 }
 
 # =========================================================================
@@ -329,6 +335,42 @@ def load_leicester_cache():
     except Exception as e:
         print(f"  [WARN] Could not load Leicester cache: {e}")
         return {}
+
+
+def discover_leicester_docx_urls():
+    """Scrape the Leicester website pages to find current docx attachment URLs.
+
+    The league re-uploads their docx files regularly (new GUIDs each time).
+    Rather than hardcoding GUIDs, we fetch the listing page and parse the
+    attachment link that matches the expected keyword. Falls back silently to
+    the hardcoded URL if the page is unreachable or the link isn't found.
+    """
+    from urllib.parse import urlparse, parse_qs, urlencode, urljoin
+    for key, info in LEICESTER_DOCX.items():
+        page_url = info.get("page")
+        keyword = info.get("keyword", "")
+        if not page_url:
+            continue
+        try:
+            r = requests.get(page_url, headers=HEADERS, timeout=15)
+            r.raise_for_status()
+            soup = BeautifulSoup(r.text, "html.parser")
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                text = a.get_text(" ", strip=True)
+                if "attachments.asp" in href and keyword.lower() in text.lower():
+                    # Make absolute URL
+                    full_url = urljoin("https://www.leicesterbowlsleague.co.uk", href)
+                    if full_url != info["url"]:
+                        print(f"  [Leicester] Updated {info['name']} URL (new GUID found on page)")
+                        info["url"] = full_url
+                    else:
+                        print(f"  [Leicester] {info['name']} URL unchanged")
+                    break
+            else:
+                print(f"  [Leicester] Could not find '{keyword}' link on page — using fallback URL")
+        except Exception as e:
+            print(f"  [Leicester] Page fetch failed for {info['name']}: {e} — using fallback URL")
 
 
 def parse_leicester_docx(url, label):
@@ -1075,6 +1117,7 @@ def main():
 
     # --- LEICESTER (Division 1 only) ---
     print("\n[3/3] Leicester Bowls League (Division 1 only)...")
+    discover_leicester_docx_urls()
     leicester_data = {}
     leicester_errors = []
     for key, info in LEICESTER_DOCX.items():

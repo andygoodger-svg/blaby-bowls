@@ -2,6 +2,9 @@
 
 Context for Claude Code working in this repo. See `README.md` for the user-facing description; this file is the quick-start for an AI agent picking the project up.
 
+#MEMORY
+when saving to mem0, always tag with project:blaby-bowling-club
+
 ## What this is
 
 A daily scraper that pulls Blaby Bowls Club's fixtures, results, and league-table data from three different bowls-league websites, renders the data as static HTML, and pushes the HTML to a GitHub Pages site. Runs unattended on a MacBook Air (Apple Silicon, macOS Tahoe / 26) via a launchd LaunchAgent, at 07:00 daily.
@@ -131,10 +134,19 @@ Scheduling is working correctly — launchd fires at 07:00 daily and successful 
 
 **Leicester docx content validation** — Added `PK` magic-byte check immediately after download. If the server returns an HTML error page with HTTP 200, the scraper now raises a clear `ValueError` ("Server returned non-docx content; URL may need updating") instead of failing inside python-docx with the cryptic "Package not found" error.
 
+### Changes made 2026-05-08 (session 4)
+
+**Leicester dynamic URL discovery** — The Leicester league re-uploads their docx files every week or two (new GUIDs each time), breaking the hardcoded attachment URLs. Added `discover_leicester_docx_urls()` which scrapes the league's fixture and table pages at runtime to find the current download link automatically. Fallback GUIDs (7 May 2026 upload) still in `LEICESTER_DOCX` for when the page is unreachable.
+
+**Leicester table parser rewritten** — `parse_leicester_table_div1()` now extracts columns by fixed position index (0,1,3,4,5,7,8,9,11,12,13,15) matching the docx's 16-column layout (with empty spacer columns). Uses the same two-row grouped header as South Leics (Games W/D/L, Rinks W/D/L, Shots F/A, Diff, Pts). Previously was cutting off at `cells[:8]` and losing most columns.
+
+**South Leics fixture display fixed** — When results are entered into the Google Sheet, fixture rows gain score columns ([Home, HomeScore, AwayScore, Away]). Previously `cells[1]` was used as the Away team, giving the score instead. Now scans reversed cells for the last non-numeric value.
+
+**South Leics result date matching fixed** — Date assignment now matches each result to its fixture by opponent name lookup, not sequential position. This correctly handles the case where results in the sheet are newest-first but fixtures are oldest-first.
+
 ### To-do / watch items
 
 - Monitor daily runs to confirm Hinckley fixture counts increase from 7 to ~14 per team once the league publishes second-half fixtures.
 - If South Leics fixture counts don't increase once the season is underway, open a fixture sheet in a browser, click the second tab, and read the `gid=XXXXX` value from the URL — update `fetch_south_leics_fixture_sheet()` to use those actual gid values.
 - The duplicate launchd job `com.andrewgoodger.blaby-bowls` is still present — confirm with user before removing.
 - Leicester docx structure: the wide two-column table layout is parsed by `parse_leicester_fixtures_structured()`. If the club changes their docx format, this will need revisiting.
-- When the Leicester league re-uploads the docx files (e.g. end of season update), the `f=` GUIDs in `LEICESTER_DOCX` will need updating again — the clearest symptom is the "Server returned non-docx content" error in the log.
