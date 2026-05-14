@@ -290,6 +290,40 @@ def scrape_hinckley_team_fixtures(team):
     return fixtures
 
 
+def scrape_hinckley_results(div_id):
+    """Scrape the results page for a Hinckley division and return Blaby results.
+
+    Page structure: one <table> per match week, with a <caption> containing the
+    date. Each data row has 12 columns:
+      [0]=Home Won, [1]=Home Dr, [2]=Home Agg, [3]=Home Pts,
+      [4]=Home Team, [5]=V, [6]=Away Team,
+      [7]=Away Pts, [8]=Away Agg, [9]=Away Dr, [10]=Away Won, [11]=PP
+    """
+    url = f"{HINCKLEY_BASE}/results.php?ly=0&f=0&yearid=2026&d={div_id}&web=hinckley&m=0&leagueid=1"
+    soup = fetch(url)
+    if not soup:
+        return []
+
+    results = []
+    for table in soup.find_all("table"):
+        caption = table.find("caption")
+        date = caption.get_text(strip=True) if caption else ""
+
+        for row in table.find_all("tr"):
+            cells = [c.get_text(strip=True) for c in row.find_all("td")]
+            if len(cells) < 9:
+                continue
+            home = cells[4]
+            away = cells[6]
+            if "blaby" not in home.lower() and "blaby" not in away.lower():
+                continue
+            # Score shown as shot aggregates (home agg - away agg)
+            score = f"{cells[2]} - {cells[8]}"
+            results.append({"date": date, "home": home, "away": away, "score": score})
+
+    return results
+
+
 def scrape_hinckley_table(div_id):
     """Scrape league table for a division."""
     url = f"{HINCKLEY_BASE}/tables.php?f=0&d={div_id}&yearid=2026&web=hinckley&m=0&leagueid=1"
@@ -1003,20 +1037,22 @@ def gen_result_table(team_label, results_list):
     return html
 
 
-def gen_results(hinckley_data, south_leics, leicester_data):
+def gen_results(hinckley_data, south_leics, leicester_data, hinckley_results=None):
     b = "<h2>Blaby Bowls - Results &amp; Scores 2026</h2>\n"
 
     # --- Hinckley ---
     b += '<div class="league-header">Hinckley &amp; District Triples League</div>\n'
+    hinckley_results = hinckley_results or {}
     current_div = None
     for team in HINCKLEY_TEAMS:
         if team["div_name"] != current_div:
             current_div = team["div_name"]
             b += f'<h3>{current_div}</h3>\n'
 
-        raw_results = [f for f in hinckley_data.get(team["name"], []) if f["score"] is not None]
-        results_list = [{"date": f["date"], "home": f["home"], "away": f["away"], "score": f["score"]} for f in raw_results]
-        b += gen_result_table(f'{team["name"]} Results', results_list)
+        # Use results scraped from results.php (keyed by div_id), filtered to this team
+        div_res = hinckley_results.get(team["div"], [])
+        team_results = [r for r in div_res if team["name"].lower() in r["home"].lower() or team["name"].lower() in r["away"].lower()]
+        b += gen_result_table(f'{team["name"]} Results', team_results)
 
     # --- South Leics (2026 only) ---
     b += '<div class="league-header">South Leicestershire Triples League</div>\n'
@@ -1106,8 +1142,12 @@ def main():
         print(f"    {team['name']}: {len(hinckley_data[team['name']])} fixtures")
 
     hinckley_tables = {}
+    hinckley_results = {}
     for div_id in set(t["div"] for t in HINCKLEY_TEAMS):
         hinckley_tables[div_id] = scrape_hinckley_table(div_id)
+        div_results = scrape_hinckley_results(div_id)
+        hinckley_results[div_id] = div_results
+        print(f"    Div {div_id} results: {len(div_results)} Blaby result(s) found")
 
     # --- SOUTH LEICS ---
     print("\n[2/3] South Leicestershire Triples League...")
@@ -1156,7 +1196,7 @@ def main():
     files = {
         "index.html": gen_index(),
         "fixtures.html": gen_fixtures(hinckley_data, south_leics, leicester_data),
-        "results.html": gen_results(hinckley_data, south_leics, leicester_data),
+        "results.html": gen_results(hinckley_data, south_leics, leicester_data, hinckley_results),
         "table-hinckley-div1.html": gen_table_page("Hinckley & District Triples", "Division 1", hinckley_tables.get(1, '<p class="no-data">No data yet.</p>')),
         "table-hinckley-div4.html": gen_table_page("Hinckley & District Triples", "Division 4", hinckley_tables.get(4, '<p class="no-data">No data yet.</p>')),
         "table-south-leics.html": gen_table_page("South Leicestershire Triples", "League Table", south_leics_table),
