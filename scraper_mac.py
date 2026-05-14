@@ -1037,6 +1037,32 @@ def gen_result_table(team_label, results_list):
     return html
 
 
+_MONTH_NUMS = {m: i for i, m in enumerate(
+    ["january","february","march","april","may","june",
+     "july","august","september","october","november","december"], 1)}
+
+def _result_sort_key(r):
+    """Return a (year, month, day) tuple for sorting results newest-first.
+    Handles formats: 'Mon 11th May', '5th May 2026', '29th April', etc."""
+    date_str = r.get("date", "") or ""
+    tokens = date_str.replace(",", " ").split()
+    day, month, year = 0, 0, 2026
+    for tok in tokens:
+        tok_l = tok.lower()
+        if tok_l in _MONTH_NUMS:
+            month = _MONTH_NUMS[tok_l]
+        elif tok.isdigit() and len(tok) == 4:
+            year = int(tok)
+        elif re.sub(r'(st|nd|rd|th)$', '', tok).isdigit():
+            day = int(re.sub(r'(st|nd|rd|th)$', '', tok))
+    return (year, month, day)
+
+
+def sort_results_desc(results_list):
+    """Sort a list of result dicts newest-first."""
+    return sorted(results_list, key=_result_sort_key, reverse=True)
+
+
 def gen_results(hinckley_data, south_leics, leicester_data, hinckley_results=None):
     b = "<h2>Blaby Bowls - Results &amp; Scores 2026</h2>\n"
 
@@ -1052,7 +1078,7 @@ def gen_results(hinckley_data, south_leics, leicester_data, hinckley_results=Non
         # Use results scraped from results.php (keyed by div_id), filtered to this team
         div_res = hinckley_results.get(team["div"], [])
         team_results = [r for r in div_res if team["name"].lower() in r["home"].lower() or team["name"].lower() in r["away"].lower()]
-        b += gen_result_table(f'{team["name"]} Results', team_results)
+        b += gen_result_table(f'{team["name"]} Results', sort_results_desc(team_results))
 
     # --- South Leics (2026 only) ---
     b += '<div class="league-header">South Leicestershire Triples League</div>\n'
@@ -1067,7 +1093,7 @@ def gen_results(hinckley_data, south_leics, leicester_data, hinckley_results=Non
                 formatted.append({"date": date, "home": cells[0], "away": cells[2], "score": f'{cells[1]} - {cells[3]}'})
             elif len(cells) >= 2:
                 formatted.append({"date": date, "home": cells[0], "away": cells[-1], "score": ""})
-        b += gen_result_table('South Leics Results', formatted)
+        b += gen_result_table('South Leics Results', sort_results_desc(formatted))
     else:
         b += '<p class="no-data">No South Leics results yet. Season starts 28th April 2026.</p>\n'
 
@@ -1077,7 +1103,7 @@ def gen_results(hinckley_data, south_leics, leicester_data, hinckley_results=Non
     leic_fixtures = parse_leicester_fixtures_structured(leic_div1)
     if leic_fixtures:
         played = [f for f in leic_fixtures if f.get("score")]
-        b += gen_result_table('Blaby Results — Division 1', played)
+        b += gen_result_table('Blaby Results — Division 1', sort_results_desc(played))
     else:
         b += '<p class="no-data">No Division 1 results available yet.</p>\n'
 
