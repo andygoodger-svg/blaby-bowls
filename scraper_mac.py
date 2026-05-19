@@ -1172,6 +1172,15 @@ def git_push():
             print("  No changes to push.")
             return True
         subprocess.run(["git", "commit", "-m", f"Auto-update: {now}"], check=True, capture_output=True)
+        subprocess.run(["git", "fetch", "origin"], check=True, capture_output=True)
+        rebase = subprocess.run(
+            ["git", "rebase", "-X", "theirs", "origin/main"],
+            capture_output=True, text=True,
+        )
+        if rebase.returncode != 0:
+            subprocess.run(["git", "rebase", "--abort"], capture_output=True)
+            print(f"  [ERROR] Rebase onto origin/main failed:\n{rebase.stderr.strip()}")
+            return False
         subprocess.run(["git", "push"], check=True, capture_output=True)
         print(f"  Pushed to GitHub at {now}")
         return True
