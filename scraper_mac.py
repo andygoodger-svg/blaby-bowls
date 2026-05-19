@@ -703,31 +703,66 @@ def scrape_south_leics():
 
         # Find Blaby fixtures in this division
         blaby_fixtures = []
-        current_date = ""
+        current_h1_date = ""
+        current_h2_date = ""
         div_name = sheet["name"].replace(" Fixtures", "")
 
         for row in rows:
             if not any(cell.strip() for cell in row):
                 continue
 
-            # Check if this row is a date header
-            first_cell = row[0].strip() if row else ""
-            if re.match(r'\d{1,2}(st|nd|rd|th)\s+(January|February|March|April|May|June|July|August|September|October|November|December)', first_cell, re.IGNORECASE):
-                current_date = first_cell
+            col0 = row[0].strip() if len(row) > 0 else ""
+
+            # Check if this row is a date header.
+            # The sheet encodes both halves of the season: H1 date is in col 0,
+            # H2 (return fixture) date is in col 5.
+            if re.match(r'\d{1,2}(st|nd|rd|th)\s+(January|February|March|April|May|June|July|August|September|October|November|December)', col0, re.IGNORECASE):
+                current_h1_date = col0
+                current_h2_date = row[5].strip() if len(row) > 5 else ""
+                continue
+
+            # Skip division label rows
+            if col0.lower().startswith("division"):
                 continue
 
             # Check if row mentions Blaby
             row_text = " ".join(row).lower()
-            if "blaby" in row_text:
-                # Fixture format: Home team | [score] | Away team | [score]
-                # or just: Home team | Away team
-                clean = [c.strip() for c in row if c.strip()]
-                if len(clean) >= 2:
-                    blaby_fixtures.append({
-                        "date": current_date,
-                        "cells": clean,
-                        "div": div_name
-                    })
+            if "blaby" not in row_text:
+                continue
+
+            # DEBUG: print raw row so we can see the actual structure
+            print(f"    DEBUG ROW ({len(row)} cols): {row}")
+
+            # Sheet format (8 columns per row):
+            #   0=H1_Home  1=H1_HomeScore  2=H1_Away  3=H1_AwayScore  4=empty
+            #   5=H2_Home(=H1_Away)  6=empty  7=H2_Away(=H1_Home)
+            h1_home = col0
+            h1_home_score = row[1].strip() if len(row) > 1 else ""
+            h1_away = row[2].strip() if len(row) > 2 else ""
+            h1_away_score = row[3].strip() if len(row) > 3 else ""
+            h2_home = row[5].strip() if len(row) > 5 else ""
+            h2_away = row[7].strip() if len(row) > 7 else ""
+            h1_score = f"{h1_home_score}–{h1_away_score}" if h1_home_score and h1_away_score else None
+
+            # H1 fixture (first half of season)
+            if h1_home and h1_away and ("blaby" in h1_home.lower() or "blaby" in h1_away.lower()):
+                blaby_fixtures.append({
+                    "date": current_h1_date,
+                    "home": h1_home,
+                    "away": h1_away,
+                    "score": h1_score,
+                    "div": div_name
+                })
+
+            # H2 (return fixture — second half of season)
+            if h2_home and h2_away and current_h2_date and ("blaby" in h2_home.lower() or "blaby" in h2_away.lower()):
+                blaby_fixtures.append({
+                    "date": current_h2_date,
+                    "home": h2_home,
+                    "away": h2_away,
+                    "score": None,
+                    "div": div_name
+                })
 
         if blaby_fixtures:
             results["fixture_divs"][div_name] = blaby_fixtures
@@ -785,23 +820,26 @@ def scrape_south_leics():
     for div_name, fixtures in results["fixture_divs"].items():
         blaby_team = None
         for f in fixtures:
-            for cell in f.get("cells", []):
-                if cell.lower().startswith("blaby"):
-                    blaby_team = cell.lower().strip()
-                    break
-            if blaby_team:
+            home = f.get("home", "")
+            away = f.get("away", "")
+            if home.lower().startswith("blaby"):
+                blaby_team = home.lower().strip()
+                break
+            elif away.lower().startswith("blaby"):
+                blaby_team = away.lower().strip()
                 break
         if not blaby_team:
             continue
         for f in fixtures:
-            date = f["date"]
+            date = f.get("date", "")
             if date and "2026" not in date:
                 date = date + " 2026"
-            # Opponent is the non-Blaby, non-numeric cell in the fixture row
-            for cell in f.get("cells", []):
-                if not cell.lower().startswith("blaby") and not cell.strip().isdigit() and cell.strip():
-                    fixture_opponent_date[blaby_team][cell.strip().lower()] = date
-                    break
+            home = f.get("home", "")
+            away = f.get("away", "")
+            # Opponent is whichever side isn't Blaby
+            opponent = away if home.lower().startswith("blaby") else home
+            if opponent and date:
+                fixture_opponent_date[blaby_team][opponent.strip().lower()] = date
 
     for result in results["results"]:
         if result.get("date"):
@@ -957,21 +995,8 @@ def gen_fixtures(hinckley_data, south_leics, leicester_data):
             team_map = {"Div 1": "Blaby A", "Div 2": "Blaby B", "Div 3": "Blaby C"}
             team_name = team_map.get(div_name, "Blaby")
 
-            fixtures = []
-            for f in raw_fixtures:
-                cells = f["cells"]
-                if len(cells) >= 1:
-                    home = cells[0]
-                    # Away is the last cell that doesn't look like a score (not purely numeric).
-                    # Handles both pre-result rows [Home, Away] and post-result rows
-                    # [Home, HomeScore, AwayScore, Away] that appear once results are entered.
-                    away = ""
-                    for cell in reversed(cells[1:]):
-                        if not cell.strip().isdigit():
-                            away = cell.strip()
-                            break
-                    if away:
-                        fixtures.append({"date": f["date"], "home": home, "away": away, "score": None})
+            # Fixtures already parsed as structured dicts with home/away/score keys
+            fixtures = [{"date": f["date"], "home": f["home"], "away": f["away"], "score": f.get("score")} for f in raw_fixtures]
 
             b += f'<h3>{div_name}</h3>\n'
             b += gen_fixture_table(f'{team_name} Fixtures — {div_name}', fixtures)
