@@ -730,9 +730,6 @@ def scrape_south_leics():
             if "blaby" not in row_text:
                 continue
 
-            # DEBUG: print raw row so we can see the actual structure
-            print(f"    DEBUG ROW ({len(row)} cols): {row}")
-
             # Sheet format (8 columns per row):
             #   0=H1_Home  1=H1_HomeScore  2=H1_Away  3=H1_AwayScore  4=empty
             #   5=H2_Home(=H1_Away)  6=empty  7=H2_Away(=H1_Home)
@@ -995,8 +992,12 @@ def gen_fixtures(hinckley_data, south_leics, leicester_data):
             team_map = {"Div 1": "Blaby A", "Div 2": "Blaby B", "Div 3": "Blaby C"}
             team_name = team_map.get(div_name, "Blaby")
 
-            # Fixtures already parsed as structured dicts with home/away/score keys
-            fixtures = [{"date": f["date"], "home": f["home"], "away": f["away"], "score": f.get("score")} for f in raw_fixtures]
+            # Fixtures already parsed as structured dicts with home/away/score keys.
+            # Sort ascending by date so upcoming H1 and H2 return fixtures appear in order.
+            fixtures = sorted(
+                [{"date": f["date"], "home": f["home"], "away": f["away"], "score": f.get("score")} for f in raw_fixtures],
+                key=_result_sort_key
+            )
 
             b += f'<h3>{div_name}</h3>\n'
             b += gen_fixture_table(f'{team_name} Fixtures — {div_name}', fixtures)
