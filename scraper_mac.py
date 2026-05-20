@@ -808,35 +808,32 @@ def scrape_south_leics():
                     print(f"    Result: [{current_date}] {' | '.join(clean)}")
 
     # --- Fill in missing dates from fixture list ---
-    # Match each result to its fixture by opponent name (more reliable than sequential
-    # assignment, which breaks when results in the sheet are newest-first but fixtures
-    # are oldest-first).
+    # Each Blaby team plays every opponent twice per season (H1 and H2, with home/away
+    # flipped). Keying only by opponent name causes H2's later date to clobber H1's,
+    # so every result ends up dated weeks in the future. Disambiguate by who was home.
     from collections import defaultdict
-    # Build {blaby_team_lower: {opponent_lower: date}} from fixture_divs
+    # Build {blaby_team_lower: {(opponent_lower, blaby_was_home): date}} from fixture_divs
     fixture_opponent_date = defaultdict(dict)
     for div_name, fixtures in results["fixture_divs"].items():
-        blaby_team = None
-        for f in fixtures:
-            home = f.get("home", "")
-            away = f.get("away", "")
-            if home.lower().startswith("blaby"):
-                blaby_team = home.lower().strip()
-                break
-            elif away.lower().startswith("blaby"):
-                blaby_team = away.lower().strip()
-                break
-        if not blaby_team:
-            continue
         for f in fixtures:
             date = f.get("date", "")
             if date and "2026" not in date:
                 date = date + " 2026"
-            home = f.get("home", "")
-            away = f.get("away", "")
-            # Opponent is whichever side isn't Blaby
-            opponent = away if home.lower().startswith("blaby") else home
-            if opponent and date:
-                fixture_opponent_date[blaby_team][opponent.strip().lower()] = date
+            home = f.get("home", "").strip()
+            away = f.get("away", "").strip()
+            if not date or not home or not away:
+                continue
+            blaby_was_home = home.lower().startswith("blaby")
+            blaby_was_away = away.lower().startswith("blaby")
+            if blaby_was_home:
+                blaby_team = home.lower()
+                opponent = away.lower()
+            elif blaby_was_away:
+                blaby_team = away.lower()
+                opponent = home.lower()
+            else:
+                continue
+            fixture_opponent_date[blaby_team][(opponent, blaby_was_home)] = date
 
     for result in results["results"]:
         if result.get("date"):
@@ -844,22 +841,26 @@ def scrape_south_leics():
         cells = result["cells"]
         if len(cells) < 2:
             continue
-        # Identify Blaby team and opponent from result cells
-        blaby_team = None
-        opponent = None
-        for cell in cells:
-            if cell.lower().startswith("blaby"):
-                blaby_team = cell.lower().strip()
-            elif not cell.strip().isdigit() and cell.strip():
-                opponent = cell.strip().lower()
-        if not blaby_team or not opponent:
+        # Result row layout (after stripping empties): [Home, HomeScore, AwayScore, Away].
+        # Use first/last non-numeric cells to identify the home and away sides so we
+        # can pick the correct half of the season's fixture pair.
+        non_numeric = [c.strip() for c in cells if c.strip() and not c.strip().isdigit()]
+        if len(non_numeric) < 2:
             continue
-        matched_date = fixture_opponent_date.get(blaby_team, {}).get(opponent)
+        home_side = non_numeric[0].lower()
+        away_side = non_numeric[-1].lower()
+        if home_side.startswith("blaby"):
+            blaby_team, opponent, blaby_was_home = home_side, away_side, True
+        elif away_side.startswith("blaby"):
+            blaby_team, opponent, blaby_was_home = away_side, home_side, False
+        else:
+            continue
+        matched_date = fixture_opponent_date.get(blaby_team, {}).get((opponent, blaby_was_home))
         if matched_date:
             result["date"] = matched_date
-            print(f"    Date resolved: {blaby_team} vs {opponent} → {matched_date}")
+            print(f"    Date resolved: {blaby_team} {'(H)' if blaby_was_home else '(A)'} vs {opponent} → {matched_date}")
         else:
-            print(f"    [WARN] No fixture date for {blaby_team} vs {opponent}")
+            print(f"    [WARN] No fixture date for {blaby_team} {'(H)' if blaby_was_home else '(A)'} vs {opponent}")
 
     # --- TABLES ---
     print("  Fetching tables sheet...")

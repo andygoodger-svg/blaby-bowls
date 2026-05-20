@@ -7,7 +7,9 @@ when saving to mem0, always tag with project:blaby-bowling-club
 
 ## What this is
 
-A daily scraper that pulls Blaby Bowls Club's fixtures, results, and league-table data from three different bowls-league websites, renders the data as static HTML, and pushes the HTML to a GitHub Pages site. Runs unattended on a MacBook Air (Apple Silicon, macOS Tahoe / 26) via a launchd LaunchAgent, at 07:00 daily.
+A daily scraper that pulls Blaby Bowls Club's fixtures, results, and league-table data from three different bowls-league websites, renders the data as static HTML, and pushes the HTML to a GitHub Pages site. Runs unattended at 07:00 daily.
+
+**Where the daily run actually executes:** The project is checked out on both Andrew's MacBook Air and the Mac Mini (`ssh macmini`, 192.168.68.79). The Mac Mini is the host that does the scheduled run — the MacBook Air has no LaunchAgent installed for this project. See **Scheduling** below for the two different mechanisms.
 
 Published at: https://andygoodger-svg.github.io/blaby-bowls/
 GitHub remote: `andygoodger-svg/blaby-bowls`
@@ -16,11 +18,11 @@ GitHub remote: `andygoodger-svg/blaby-bowls`
 
 - `scraper_mac.py` — **the scraper that's actually in use** (v3). Scrapes Hinckley via HTML, Leicester via `.docx` downloads, South Leics via the Google Sheets CSV export. Sends a Telegram ping on completion, then `git add/commit/push`es to GitHub Pages.
 - `scraper.py` — older v2, superseded. Leave it alone unless explicitly asked.
-- `scheduler.py` — old long-running Python polling loop. **No longer used** — launchd handles scheduling now. Only kept in the repo for reference.
+- `scheduler.py` — long-running Python polling loop. Still in use on the Mac Mini (wrapped by `Blaby Scheduler.app`); not used on the MacBook Air.
 - `run_scraper.sh` — shell wrapper that invokes the scraper via the local venv and appends stdout/stderr to `scraper.log`. Handy for manual runs.
-- `Blaby Scheduler.app` — legacy Automator wrapper around `scheduler.py`. **No longer used** on this Mac. Kept around for the other Mac.
-- `com.blaby.scraper.plist` — the LaunchAgent definition. A copy is installed at `~/Library/LaunchAgents/com.blaby.scraper.plist`.
-- `setup_schedule.sh` — one-time installer for the LaunchAgent (bootstrap/enable via `launchctl`).
+- `Blaby Scheduler.app` — Automator wrapper around `scheduler.py`. **This is what triggers the daily 07:00 run on the Mac Mini.** Registered with launchd as `application.com.apple.automator.Blaby-Scheduler.<...>` (visible via `launchctl list | grep -i blaby`). Not used on the MacBook Air.
+- `com.blaby.scraper.plist` — the LaunchAgent definition. Intended for the MacBook Air setup (installed at `~/Library/LaunchAgents/com.blaby.scraper.plist`). **Not installed on the Mac Mini** — the Mini uses the Automator app instead.
+- `setup_schedule.sh` — one-time installer for the LaunchAgent (bootstrap/enable via `launchctl`). MacBook Air only.
 - `diagnose.sh` — quick diagnostic runner (tails the log, checks launchd state, runs scraper directly).
 - `venv/` — Python 3.14 virtualenv. **Use this** — do not create a new one. Interpreter at `venv/bin/python3`.
 - `index.html`, `fixtures.html`, `results.html`, `table-*.html` — generated output. Overwritten on each scraper run. Don't hand-edit.
@@ -56,8 +58,23 @@ rm ~/Library/LaunchAgents/com.blaby.scraper.plist
 
 ## Scheduling
 
-- LaunchAgent label: `com.blaby.scraper`, defined in `com.blaby.scraper.plist`.
-- `StartCalendarInterval` set to `Hour=7 Minute=0`. If the Mac is asleep at 07:00, launchd fires the job at the next wake — this is intentional, the user is usually awake by 7am anyway.
+There are **two scheduling setups** depending on which machine you're on.
+
+### Mac Mini (this is the machine that produces the daily published commits)
+- Triggered by `Blaby Scheduler.app` (Automator wrapper around `scheduler.py`), which is auto-started by launchd at login and stays running. Visible in `launchctl list` as `application.com.apple.automator.Blaby-Scheduler.<pid>.<pid>`.
+- `scheduler.py` polls and fires `scraper_mac.py` at 07:00 local time daily.
+- There is **no `com.blaby.scraper` LaunchAgent installed** on the Mini — `launchctl print gui/$(id -u)/com.blaby.scraper` returns "Could not find service". Don't try to "fix" that; the Automator app is the intended trigger here.
+- `scheduler.log` on the Mini is stale (last entry 2026-04-24) — the current scheduler is logging only into `scraper.log`.
+
+### MacBook Air
+- LaunchAgent label: `com.blaby.scraper`, defined in `com.blaby.scraper.plist`, installed via `setup_schedule.sh`.
+- `StartCalendarInterval` set to `Hour=7 Minute=0`. If the Mac is asleep at 07:00, launchd fires the job at the next wake.
+- Currently **not installed** on the MacBook Air (no plist in `~/Library/LaunchAgents/`). The Mini is doing the daily work; the MacBook Air is just a dev checkout.
+
+### Multi-machine git divergence
+- Both machines push to the same `main` branch on GitHub. If you commit on the MacBook Air, the Mini's local main goes behind and the next 07:00 push will be rejected.
+- `scraper_mac.py`'s `git_push()` now does a `git pull --rebase origin main` before pushing (the fix in commit `37c3b08`, added 2026-05-19 after a push-failed Telegram from yesterday's 07:00 run on the Mini).
+- If a push genuinely fails, `send_telegram()` posts: *"Blaby Bowls scraper ran at <ts> but push failed. Check logs."*
 - `RunAtLoad=false`, so installing/reloading the plist does not trigger a run.
 - No `pmset` wake/sleep schedule is used on this Mac (the user's other Mac used one; this one doesn't).
 
