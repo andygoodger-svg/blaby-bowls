@@ -61,10 +61,10 @@ rm ~/Library/LaunchAgents/com.blaby.scraper.plist
 There are **two scheduling setups** depending on which machine you're on.
 
 ### Mac Mini (this is the machine that produces the daily published commits)
-- Triggered by `Blaby Scheduler.app` (Automator wrapper around `scheduler.py`), which is auto-started by launchd at login and stays running. Visible in `launchctl list` as `application.com.apple.automator.Blaby-Scheduler.<pid>.<pid>`.
-- `scheduler.py` polls and fires `scraper_mac.py` at 07:00 local time daily.
-- There is **no `com.blaby.scraper` LaunchAgent installed** on the Mini — `launchctl print gui/$(id -u)/com.blaby.scraper` returns "Could not find service". Don't try to "fix" that; the Automator app is the intended trigger here.
-- `scheduler.log` on the Mini is stale (last entry 2026-04-24) — the current scheduler is logging only into `scraper.log`.
+- Triggered by a **LaunchDaemon** at `/Library/LaunchDaemons/com.blaby.scraper.plist` (root-installed, runs as `andrewgoodger`). `StartCalendarInterval` fires `venv/bin/python3 scraper_mac.py` at 07:00 daily. Not visible via user-scope `launchctl list` — `sudo launchctl list | grep blaby` to see it.
+- The plist is checked into the repo as `com.blaby.scraper.plist` but lives at `/Library/LaunchDaemons/` not `~/Library/LaunchAgents/` (so `launchctl print gui/$(id -u)/com.blaby.scraper` returns "Could not find service" — that's expected; check `system/com.blaby.scraper` instead).
+- `scheduler.py` and `Blaby Scheduler.app` are **legacy / unused** on the Mini as of 2026-05-24. Prior to that date a second copy of the project on `/Volumes/SSD_1/blaby-bowls/` was also auto-starting via an Automator login item and trying to push stale data — that was the source of the "push failed" Telegram on 2026-05-24 07:00. The SSD `scheduler.py` has been replaced with a no-op stub; the login item still exists in System Settings → Login Items and should be removed manually next time someone is at the machine.
+- `scheduler.log` on the Mini is stale and unused — the LaunchDaemon logs only into `scraper.log`.
 
 ### MacBook Air
 - LaunchAgent label: `com.blaby.scraper`, defined in `com.blaby.scraper.plist`, installed via `setup_schedule.sh`.
@@ -161,8 +161,13 @@ Scheduling is working correctly — launchd fires at 07:00 daily and successful 
 
 **South Leics result date matching fixed** — Date assignment now matches each result to its fixture by opponent name lookup, not sequential position. This correctly handles the case where results in the sheet are newest-first but fixtures are oldest-first.
 
+### Changes made 2026-05-24 (session 5)
+
+**Orphan SSD scheduler disabled** — The `/Volumes/SSD_1/blaby-bowls/` copy (pre-migration leftover, scraper dated 24 Apr) was still being auto-launched at login by a separate `Blaby Scheduler.app` Automator login item. It ran at 07:00 each day with stale code (no rebase fix, stale Leicester GUIDs), failed to push, and sent a "push failed" Telegram alert — while the internal LaunchDaemon's run succeeded in parallel and published correctly. Replaced `/Volumes/SSD_1/blaby-bowls/scheduler.py` with a no-op stub that logs and exits, so the login item launches cleanly without invoking the stale scraper. Killed the running PIDs (1705/1715).
+
 ### To-do / watch items
 
+- Manually remove the "Blaby Scheduler" entry from System Settings → General → Login Items & Extensions (it currently points at `/Volumes/SSD_1/blaby-bowls/Blaby Scheduler.app`, which now runs the no-op stub). The whole `/Volumes/SSD_1/blaby-bowls/` directory can be deleted once that's done.
 - Monitor daily runs to confirm Hinckley fixture counts increase from 7 to ~14 per team once the league publishes second-half fixtures.
 - If South Leics fixture counts don't increase once the season is underway, open a fixture sheet in a browser, click the second tab, and read the `gid=XXXXX` value from the URL — update `fetch_south_leics_fixture_sheet()` to use those actual gid values.
 - The duplicate launchd job `com.andrewgoodger.blaby-bowls` is still present — confirm with user before removing.
