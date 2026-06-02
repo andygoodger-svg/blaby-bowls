@@ -318,9 +318,18 @@ def scrape_hinckley_results(div_id):
             away = cells[6]
             if "blaby" not in home.lower() and "blaby" not in away.lower():
                 continue
-            # Score shown as shot aggregates (home agg - away agg)
-            score = f"{cells[2]} - {cells[8]}"
-            results.append({"date": date, "home": home, "away": away, "score": score})
+            results.append({
+                "date": date,
+                "home": home,
+                "away": away,
+                "score": f"{cells[2]} - {cells[8]}",
+                "home_won": cells[0],   # rinks won by home
+                "home_drew": cells[1],  # rinks drawn by home
+                "home_pts": cells[3],   # match points home
+                "away_won": cells[10],  # rinks won by away
+                "away_drew": cells[9],  # rinks drawn by away
+                "away_pts": cells[7],   # match points away
+            })
 
     return results
 
@@ -1050,17 +1059,43 @@ def gen_fixtures(hinckley_data, south_leics, leicester_data):
 
 def gen_result_table(team_label, results_list):
     """Generate a consistent result table for any league.
-    results_list: list of dicts with keys: date, home, away, score (or home_score/away_score)
+    results_list: list of dicts with keys: date, home, away, score.
+    Hinckley results also carry home_won/home_drew/home_pts/away_won/away_drew/away_pts.
     """
     if not results_list:
         return f'<p class="no-data">No {team_label} results yet.</p>\n'
 
+    # Check if extended Hinckley columns are present
+    has_rinks = any(r.get("home_won") is not None for r in results_list)
+
     html = f'<div class="team-header">{team_label}</div>\n'
     html += '<table>\n'
-    html += '<tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th></tr>\n'
+    if has_rinks:
+        html += '<tr><th>Date</th><th>Home</th><th>W</th><th>D</th><th>Agg</th><th></th><th>Agg</th><th>D</th><th>W</th><th>Away</th><th>Pts</th></tr>\n'
+    else:
+        html += '<tr><th>Date</th><th>Home</th><th>Score</th><th>Away</th></tr>\n'
     for r in results_list:
-        score = r.get("score", "")
-        html += f'<tr class="blaby-match"><td>{r["date"]}</td><td>{r["home"]}</td><td class="score">{score}</td><td>{r["away"]}</td></tr>\n'
+        if has_rinks:
+            score = r.get("score", "")
+            agg = score.split(" - ") if " - " in score else ["", ""]
+            html += (
+                f'<tr class="blaby-match">'
+                f'<td>{r["date"]}</td>'
+                f'<td>{r["home"]}</td>'
+                f'<td class="score">{r.get("home_won","")}</td>'
+                f'<td class="score">{r.get("home_drew","")}</td>'
+                f'<td class="score">{agg[0]}</td>'
+                f'<td>–</td>'
+                f'<td class="score">{agg[1]}</td>'
+                f'<td class="score">{r.get("away_drew","")}</td>'
+                f'<td class="score">{r.get("away_won","")}</td>'
+                f'<td>{r["away"]}</td>'
+                f'<td class="score">{r.get("home_pts","")}-{r.get("away_pts","")}</td>'
+                f'</tr>\n'
+            )
+        else:
+            score = r.get("score", "")
+            html += f'<tr class="blaby-match"><td>{r["date"]}</td><td>{r["home"]}</td><td class="score">{score}</td><td>{r["away"]}</td></tr>\n'
     html += '</table>\n'
     return html
 
