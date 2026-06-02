@@ -12,8 +12,9 @@ import os, subprocess, sys, re, csv, io, json
 from datetime import datetime
 
 OUTPUT_DIR = "/Users/andrewgoodger/blaby-bowls"
-HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) BlabyScraper/3.0"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
 LEICESTER_CACHE_FILE = os.path.join(OUTPUT_DIR, ".leicester_cache.json")
+HINCKLEY_CACHE_FILE = os.path.join(OUTPUT_DIR, ".hinckley_cache.json")
 
 
 def _load_dotenv(path):
@@ -1210,6 +1211,28 @@ def main():
         div_results = scrape_hinckley_results(div_id)
         hinckley_results[div_id] = div_results
         print(f"    Div {div_id} results: {len(div_results)} Blaby result(s) found")
+
+    # Cache Hinckley data so transient 403s/outages don't wipe the live pages.
+    # If all fetches returned empty (probable site block), fall back to cache.
+    hinckley_got_data = any(hinckley_data.values()) or any(hinckley_tables.values()) or any(hinckley_results.values())
+    if hinckley_got_data:
+        try:
+            with open(HINCKLEY_CACHE_FILE, "w") as f:
+                json.dump({"data": hinckley_data, "tables": hinckley_tables, "results": hinckley_results}, f)
+            print("  Hinckley cache updated.")
+        except Exception as e:
+            print(f"  [WARN] Could not write Hinckley cache: {e}")
+    else:
+        print("  [WARN] No Hinckley data fetched — trying cache fallback...")
+        try:
+            with open(HINCKLEY_CACHE_FILE) as f:
+                cached = json.load(f)
+            hinckley_data = cached.get("data", {})
+            hinckley_tables = {int(k): v for k, v in cached.get("tables", {}).items()}
+            hinckley_results = {int(k): v for k, v in cached.get("results", {}).items()}
+            print("  Using cached Hinckley data.")
+        except Exception:
+            print("  [WARN] No Hinckley cache available — pages will show no data.")
 
     # --- SOUTH LEICS ---
     print("\n[2/3] South Leicestershire Triples League...")
