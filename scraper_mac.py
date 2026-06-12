@@ -303,7 +303,7 @@ def scrape_hinckley_results(div_id):
     url = f"{HINCKLEY_BASE}/results.php?ly=0&f=0&yearid=2026&d={div_id}&web=hinckley&m=0&leagueid=1"
     soup = fetch(url)
     if not soup:
-        return []
+        return None  # Distinguish fetch failure from genuinely no results
 
     results = []
     for table in soup.find_all("table"):
@@ -1103,6 +1103,8 @@ def gen_result_table(team_label, results_list):
 _MONTH_NUMS = {m: i for i, m in enumerate(
     ["january","february","march","april","may","june",
      "july","august","september","october","november","december"], 1)}
+# Also accept abbreviated forms used by Hinckley result page captions ("Jun", "Jul", etc.)
+_MONTH_NUMS.update({"jan":1,"feb":2,"mar":3,"apr":4,"jun":6,"jul":7,"aug":8,"sep":9,"oct":10,"nov":11,"dec":12})
 
 def _result_sort_key(r):
     """Return a (year, month, day) tuple for sorting results newest-first.
@@ -1239,16 +1241,32 @@ def main():
         hinckley_data[team["name"]] = scrape_hinckley_team_fixtures(team)
         print(f"    {team['name']}: {len(hinckley_data[team['name']])} fixtures")
 
+    # Load old cache up-front so per-div fallback is available when a fetch times out.
+    old_hinckley_results = {}
+    try:
+        with open(HINCKLEY_CACHE_FILE) as f:
+            _old = json.load(f)
+        old_hinckley_results = {int(k): v for k, v in _old.get("results", {}).items()}
+        print("  Old Hinckley results cache loaded for per-div fallback.")
+    except Exception:
+        pass
+
     hinckley_tables = {}
     hinckley_results = {}
     for div_id in set(t["div"] for t in HINCKLEY_TEAMS):
         hinckley_tables[div_id] = scrape_hinckley_table(div_id)
         div_results = scrape_hinckley_results(div_id)
-        hinckley_results[div_id] = div_results
-        print(f"    Div {div_id} results: {len(div_results)} Blaby result(s) found")
+        if div_results is None:
+            # Fetch failed (timeout/error) — preserve cached results for this div
+            fallback = old_hinckley_results.get(div_id, [])
+            hinckley_results[div_id] = fallback
+            print(f"    Div {div_id} results: fetch failed, using {len(fallback)} cached result(s)")
+        else:
+            hinckley_results[div_id] = div_results
+            print(f"    Div {div_id} results: {len(div_results)} Blaby result(s) found")
 
     # Cache Hinckley data so transient 403s/outages don't wipe the live pages.
-    # If all fetches returned empty (probable site block), fall back to cache.
+    # If all fetches returned empty (probable site block), fall back to cache entirely.
     hinckley_got_data = any(hinckley_data.values()) or any(hinckley_tables.values()) or any(hinckley_results.values())
     if hinckley_got_data:
         try:
