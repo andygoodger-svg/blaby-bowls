@@ -9,7 +9,7 @@ Blaby Bowls Scraper v3
 import requests
 from bs4 import BeautifulSoup
 import os, subprocess, sys, re, csv, io, json
-from datetime import datetime
+from datetime import datetime, date
 
 OUTPUT_DIR = "/Users/andrewgoodger/blaby-bowls"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"}
@@ -251,11 +251,20 @@ def _parse_hinckley_fixture_table(soup, team):
                         "team": team["name"]
                     })
 
-                # Check for second fixture in same row (pages show 2 columns)
-                if len(cells) >= 6:
-                    date2 = cells[3]
-                    opponent2 = cells[4]
-                    home_away2 = cells[5] if len(cells) > 5 else ""
+                # Check for second fixture in same row (pages show 2 columns:
+                # first half on the left, second half on the right).
+                # Layout is 7 cells: [0]date [1]opp [2]H/A [3]<blank spacer> [4]date [5]opp [6]H/A
+                # Older/narrower rows omit the spacer, so locate the second block by
+                # scanning for the next day-name cell rather than assuming an index.
+                second = None
+                for k in range(3, len(cells) - 1):
+                    if cells[k] and any(m in cells[k] for m in ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]):
+                        second = k
+                        break
+                if second is not None:
+                    date2 = cells[second]
+                    opponent2 = cells[second + 1]
+                    home_away2 = cells[second + 2] if len(cells) > second + 2 else ""
                     if date2 and opponent2 and any(m in date2 for m in ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]):
                         is_home2 = "Home" in home_away2 or "home" in home_away2
                         fixtures.append({
@@ -955,11 +964,27 @@ def scrape_south_leics():
 # =========================================================================
 # HTML GENERATION
 # =========================================================================
+def _is_past_fixture(f):
+    """True if the fixture's date is before today.
+
+    Several sources (notably Hinckley) never attach scores to their fixture
+    feed, so without this filter the 'Upcoming Fixtures' page lists the whole
+    season forever. If the date can't be parsed, keep the fixture (fail open).
+    """
+    year, month, day = _result_sort_key(f)
+    if not month or not day:
+        return False
+    try:
+        return date(year, month, day) < date.today()
+    except ValueError:
+        return False
+
+
 def gen_fixture_table(team_label, fixtures, show_date_rows=False):
     """Generate a consistent fixture table for any league.
     fixtures: list of dicts with keys: date, home, away (and optionally score)
     """
-    upcoming = [f for f in fixtures if not f.get("score")]
+    upcoming = [f for f in fixtures if not f.get("score") and not _is_past_fixture(f)]
     if not upcoming:
         return f'<p class="no-data">No upcoming {team_label} fixtures found.</p>\n'
 
@@ -992,7 +1017,13 @@ def gen_fixtures(hinckley_data, south_leics, leicester_data):
             b += f'<h3>{current_div}</h3>\n'
 
         raw_fixtures = hinckley_data.get(team["name"], [])
-        fixtures = [{"date": f["date"], "home": f["home"], "away": f["away"], "score": f["score"]} for f in raw_fixtures]
+        # The source page lays out first half (left) and second half (right)
+        # side by side, so the raw order interleaves the two halves. Sort by
+        # date so fixtures read in calendar order.
+        fixtures = sorted(
+            [{"date": f["date"], "home": f["home"], "away": f["away"], "score": f["score"]} for f in raw_fixtures],
+            key=_result_sort_key,
+        )
         b += gen_fixture_table(f'{team["name"]} Fixtures', fixtures)
 
     # --- South Leics ---
@@ -1105,6 +1136,7 @@ _MONTH_NUMS = {m: i for i, m in enumerate(
      "july","august","september","october","november","december"], 1)}
 # Also accept abbreviated forms used by Hinckley result page captions ("Jun", "Jul", etc.)
 _MONTH_NUMS.update({"jan":1,"feb":2,"mar":3,"apr":4,"jun":6,"jul":7,"aug":8,"sep":9,"oct":10,"nov":11,"dec":12})
+_MONTH_NUMS["sept"] = 9
 
 def _result_sort_key(r):
     """Return a (year, month, day) tuple for sorting results newest-first.
