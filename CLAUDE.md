@@ -165,10 +165,24 @@ Scheduling is working correctly — launchd fires at 07:00 daily and successful 
 
 **Orphan SSD scheduler disabled** — The `/Volumes/SSD_1/blaby-bowls/` copy (pre-migration leftover, scraper dated 24 Apr) was still being auto-launched at login by a separate `Blaby Scheduler.app` Automator login item. It ran at 07:00 each day with stale code (no rebase fix, stale Leicester GUIDs), failed to push, and sent a "push failed" Telegram alert — while the internal LaunchDaemon's run succeeded in parallel and published correctly. Replaced `/Volumes/SSD_1/blaby-bowls/scheduler.py` with a no-op stub that logs and exits, so the login item launches cleanly without invoking the stale scraper. Killed the running PIDs (1705/1715).
 
+### Changes made 2026-08-04 (session 6)
+
+Both fixes are in `scraper_mac.py` (commit `02ee61c`), made and verified **on the Mac Mini** — that checkout is the canonical one (it runs the 07:00 LaunchDaemon and is the only machine that pushes). The MacBook Air checkout drifts badly (65 commits behind in Aug 2026); never copy code from the Air to the Mini without diffing against `origin/main` first.
+
+**Hinckley second-half fixtures were never parsed** — `bowlsresultstwo.co.uk/results24/teamfixtures.php` returns *both* halves of the season in a single row, 7 cells wide: `[0]date [1]opponent [2]Home/Away [3]<blank spacer> [4]date2 [5]opponent2 [6]Home/Away2`. `_parse_hinckley_fixture_table()` read the second block at `cells[3,4,5]`, so `date2` was always the blank spacer → falsy → the check failed → all 7 second-half fixtures (6 Jul – 17 Aug 2026) were silently dropped for every Blaby team. Fixed by scanning forward from index 3 for the next cell containing a day-name and reading the block from there. Counts went 7 → 14 per team. Note: the `f=0` and `f=1` URL params return **identical** pages — the halves are not split by that param, despite `scrape_hinckley_team_fixtures()` fetching both. Harmless, left alone.
+
+**"Upcoming Fixtures" listed the entire season forever** — `gen_fixture_table()` treated *"has no score"* as *"upcoming"*, but Hinckley's fixture feed never carries scores, so matches played back in May were still shown as upcoming. Added `_is_past_fixture()`, which reuses `_result_sort_key()` and drops anything dated before `date.today()`, failing open if the date can't be parsed. Andrew chose **hide past dates** rather than greying out played fixtures.
+
+**Hinckley fixture list now date-sorted** — the two-column page layout interleaves the halves, so raw order was 6 Jul, 13 Jul, 1 Jun, 20 Jul… `gen_fixtures()` now sorts by `_result_sort_key`. Also added `"sept"` to `_MONTH_NUMS`.
+
+**Not bugs — do not "fix" these:** South Leicestershire Triples finished 28 July 2026 (tables show Pl.=14 with Ch/R markers) and Leicester Bowls League Div 1 finished 29 July 2026 (10 games played). **"No upcoming fixtures" for those two leagues is correct output and will stay that way until the 2027 season.** Leicester's runtime docx GUID discovery is working fine (current Div 1 docx uploaded 31 July 2026).
+
 ### To-do / watch items
 
 - Manually remove the "Blaby Scheduler" entry from System Settings → General → Login Items & Extensions (it currently points at `/Volumes/SSD_1/blaby-bowls/Blaby Scheduler.app`, which now runs the no-op stub). The whole `/Volumes/SSD_1/blaby-bowls/` directory can be deleted once that's done.
-- Monitor daily runs to confirm Hinckley fixture counts increase from 7 to ~14 per team once the league publishes second-half fixtures.
+- ~~Monitor daily runs to confirm Hinckley fixture counts increase from 7 to ~14 per team once the league publishes second-half fixtures.~~ Done 2026-08-04 — the cause was the cell-index bug above, not the league; counts are now 14 per team.
+- Hinckley's last fixture is Mon 17 Aug 2026. After that, all three leagues will show "No upcoming fixtures" — that's correct, not a failure.
+- `_is_past_fixture()` fails open on unparseable dates. If a league changes its date format next season, past fixtures will start reappearing on the Fixtures page — that's the symptom to look for.
 - If South Leics fixture counts don't increase once the season is underway, open a fixture sheet in a browser, click the second tab, and read the `gid=XXXXX` value from the URL — update `fetch_south_leics_fixture_sheet()` to use those actual gid values.
 - The duplicate launchd job `com.andrewgoodger.blaby-bowls` is still present — confirm with user before removing.
 - Leicester docx structure: the wide two-column table layout is parsed by `parse_leicester_fixtures_structured()`. If the club changes their docx format, this will need revisiting.
